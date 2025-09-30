@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import dotenv from 'dotenv';
-import { orders, products, announcements, product_images, users, addresses, order_items, order_delivery } from './schema';
+import { orders, products, announcements, product_images, users, addresses, order_items, order_delivery, contacts } from './schema';
 
 dotenv.config();
 
@@ -11,4 +11,4 @@ if (!connectionString) {
 }
 
 const pool = new Pool({ connectionString });
-export const db = drizzle(pool, { schema: { orders, products, announcements, product_images, users, addresses, order_items, order_delivery } });
+export const db = drizzle(pool, { schema: { orders, products, announcements, product_images, users, addresses, order_items, order_delivery, contacts } });

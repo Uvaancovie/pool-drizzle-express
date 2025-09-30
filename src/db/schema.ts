@@ -133,3 +133,13 @@ export const order_delivery = pgTable('order_delivery', {
   updated_at: timestamp('updated_at').notNull().defaultNow()
 });
 
+export const contacts = pgTable('contacts', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  phone: text('phone'),
+  message: text('message').notNull(),
+  is_read: pgBoolean('is_read').notNull().default(false),
+  created_at: timestamp('created_at').notNull().defaultNow()
+});
+

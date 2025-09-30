@@ -8,7 +8,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { supabase } from './supabaseClient';
 import { db } from './db/client';
-import { orders, products, announcements, product_images, users, addresses, order_items, order_delivery } from './db/schema';
+import { orders, products, announcements, product_images, users, addresses, order_items, order_delivery, contacts } from './db/schema';
 import { desc, eq, and, gte, lte, or, isNotNull } from 'drizzle-orm';
 
 dotenv.config();
@@ -663,33 +663,67 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
 
     // Handle delivery
     let shippingAddressId = null;
+    let shippingAddressFallback: any = null;
+
     if (deliveryMethod === 'shipping') {
-      const [address] = await db.insert(addresses).values({
-        user_id: customer.id,
-        type: 'shipping',
-        first_name: customerInfo.firstName,
-        last_name: customerInfo.lastName,
-        email: customerInfo.email,
-        phone: customerInfo.phone,
-        address_line_1: shippingAddress.addressLine1,
-        address_line_2: shippingAddress.addressLine2 || null,
-        city: shippingAddress.city,
-        state: shippingAddress.state || null,
-        postal_code: shippingAddress.postalCode,
-        country: shippingAddress.country || 'South Africa'
-      }).returning();
-      shippingAddressId = address.id;
+      // Basic validation for shipping address
+      if (!shippingAddress || !shippingAddress.addressLine1 || !shippingAddress.city || !shippingAddress.postalCode) {
+        return res.status(400).json({ error: 'Shipping address must include addressLine1, city and postalCode' });
+      }
+
+      // attempt to persist the shipping address; if it fails, keep a fallback in memory
+      try {
+        const [address] = await db.insert(addresses).values({
+          user_id: customer.id,
+          type: 'shipping',
+          first_name: customerInfo.firstName,
+          last_name: customerInfo.lastName,
+          email: customerInfo.email,
+          phone: customerInfo.phone,
+          address_line_1: shippingAddress.addressLine1,
+          address_line_2: shippingAddress.addressLine2 || null,
+          city: shippingAddress.city,
+          state: shippingAddress.state || null,
+          postal_code: shippingAddress.postalCode,
+          country: shippingAddress.country || 'South Africa'
+        }).returning();
+        shippingAddressId = address.id;
+      } catch (err: any) {
+        // Log the error but continue — we'll attach the shipping address to order_delivery.notes as a fallback
+        console.error('Insert shipping address error:', err?.message || err);
+        shippingAddressFallback = {
+          firstName: customerInfo.firstName,
+          lastName: customerInfo.lastName,
+          email: customerInfo.email,
+          phone: customerInfo.phone,
+          addressLine1: shippingAddress.addressLine1,
+          addressLine2: shippingAddress.addressLine2 || null,
+          city: shippingAddress.city,
+          state: shippingAddress.state || null,
+          postalCode: shippingAddress.postalCode,
+          country: shippingAddress.country || 'South Africa'
+        };
+      }
     }
 
-    await db.insert(order_delivery).values({
-      order_id: order.id,
-      delivery_method: deliveryMethod,
-      pickup_date: deliveryMethod === 'pickup' ? new Date(pickupDate) : null,
-      pickup_time: deliveryMethod === 'pickup' ? pickupTime : null,
-      shipping_address_id: shippingAddressId
-    });
+    // Insert order_delivery but don't let failures here block the customer's success response
+    try {
+      await db.insert(order_delivery).values({
+        order_id: order.id,
+        delivery_method: deliveryMethod,
+        pickup_date: deliveryMethod === 'pickup' ? (pickupDate ? new Date(pickupDate) : null) : null,
+        pickup_time: deliveryMethod === 'pickup' ? pickupTime : null,
+        shipping_address_id: shippingAddressId,
+        notes: shippingAddressFallback ? JSON.stringify({ shippingAddressFallback }) : null
+      });
+    } catch (err: any) {
+      console.error('Insert order_delivery error (non-fatal):', err?.message || err);
+      // continue — the order was created and we will return success to the customer
+    }
 
+    // Always return success to the customer when the order itself was created
     res.json({
+      message: 'Order placed successfully',
       order: {
         id: order.id,
         orderNo: order.order_no,
@@ -805,6 +839,42 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: expres
           where: eq(users.id, order.user_id)
         }) : null;
 
+        // fetch shipping address details if present
+        let shippingAddressFull = null;
+        if (delivery && delivery.shipping_address_id) {
+          try {
+            const addr = await db.query.addresses.findFirst({ where: eq(addresses.id, delivery.shipping_address_id) });
+            if (addr) {
+              shippingAddressFull = {
+                addressLine1: addr.address_line_1,
+                addressLine2: addr.address_line_2,
+                city: addr.city,
+                state: addr.state,
+                postalCode: addr.postal_code,
+                country: addr.country
+              };
+            }
+          } catch (err) {
+            console.error('Error fetching shipping address for order', order.id, err);
+          }
+        }
+
+        // If we don't have a shipping address row, check for a fallback in delivery.notes
+        if (!shippingAddressFull && delivery && delivery.notes) {
+          try {
+            const parsed = JSON.parse(delivery.notes);
+            if (parsed && parsed.shippingAddressFallback) {
+              shippingAddressFull = parsed.shippingAddressFallback;
+            }
+          } catch (err) {
+            // ignore parse errors
+          }
+        }
+
+        // Build a delivery object that includes the resolved shipping address and a flag
+        const deliveryWithAddress = delivery ? { ...delivery, shippingAddress: shippingAddressFull } : delivery;
+        const needsShipping = !!(delivery && (delivery.delivery_method === 'shipping' || delivery.shipping_address_id || shippingAddressFull));
+
         return {
           id: order.id,
           orderNo: order.order_no,
@@ -818,7 +888,9 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: expres
             phone: customer.phone
           } : null,
           items,
-          delivery
+          delivery: deliveryWithAddress,
+          shippingAddress: shippingAddressFull,
+          needsShipping
         };
       })
     );
@@ -914,6 +986,54 @@ app.get('/api/orders/:id/invoice', async (req: express.Request, res: express.Res
   } catch (err) {
     console.error('Get invoice error:', err);
     res.status(500).json({ error: 'Failed to get invoice' });
+  }
+});
+
+// Contact form submission endpoint
+app.post('/api/contact', async (req: express.Request, res: express.Response) => {
+  const { name, email, phone, message } = req.body;
+
+  if (!name || !email || !message) {
+    return res.status(400).json({ error: 'Name, email, and message are required' });
+  }
+
+  try {
+    await db.insert(contacts).values({
+      name,
+      email,
+      phone: phone || null,
+      message,
+      is_read: false
+    });
+
+    res.status(201).json({ message: 'Contact form submitted successfully' });
+  } catch (err: any) {
+    console.error('Contact form submission error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to submit contact form' });
+  }
+});
+
+// Admin endpoint to get all contacts
+app.get('/api/admin/contacts', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const allContacts = await db.select().from(contacts).orderBy(desc(contacts.created_at));
+    res.json({ contacts: allContacts });
+  } catch (err: any) {
+    console.error('Get contacts error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to get contacts' });
+  }
+});
+
+// Admin endpoint to mark contact as read
+app.patch('/api/admin/contacts/:id/read', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
+  const { id } = req.params;
+
+  try {
+    await db.update(contacts).set({ is_read: true }).where(eq(contacts.id, parseInt(id)));
+    res.json({ message: 'Contact marked as read' });
+  } catch (err: any) {
+    console.error('Mark contact as read error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to mark contact as read' });
   }
 });
 
