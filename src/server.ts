@@ -17,7 +17,21 @@ const app = express();
 const port = process.env.PORT || 4000;
 
 app.use(bodyParser.json());
-app.use(cors());
+// Configure CORS to allow the frontend origin(s). Set FRONTEND_ORIGIN in deployment to
+// e.g. 'https://poolbeanbags-frontend.vercel.app' or multiple origins separated by commas.
+const allowedOrigins = (process.env.FRONTEND_ORIGIN || 'https://poolbeanbags-frontend.vercel.app').split(',').map(s => s.trim());
+app.use(cors({
+  origin: (origin, callback) => {
+    // allow requests with no origin (e.g., curl, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
+    // fallback: allow if wildcard present
+    if (allowedOrigins.indexOf('*') !== -1) return callback(null, true);
+    return callback(new Error('CORS policy does not allow this origin'), false);
+  },
+  credentials: true,
+  optionsSuccessStatus: 200,
+}));
 
 // JWT Authentication middleware
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
