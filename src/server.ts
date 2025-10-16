@@ -350,6 +350,7 @@ app.delete('/admin/announcements/:id', authenticateToken, requireAdmin, async (r
 // Public: list active announcements
 app.get('/api/announcements', async (req: express.Request, res: express.Response) => {
   try {
+    console.log('Fetching announcements...');
     const now = new Date();
     const active = await db.select().from(announcements)
       .where(or(
@@ -357,6 +358,8 @@ app.get('/api/announcements', async (req: express.Request, res: express.Response
         isNotNull(announcements.published_at)
       ))
       .orderBy(desc(announcements.is_featured), desc(announcements.created_at));
+
+    console.log(`Found ${active.length} active announcements`);
 
     // Convert banner image keys to signed URLs
     const bucket = process.env.SUPABASE_BUCKET || 'images';
@@ -367,7 +370,13 @@ app.get('/api/announcements', async (req: express.Request, res: express.Response
           const signed = await supabase.storage.from(bucket).createSignedUrl(announcement.banner_image, 60 * 60);
           bannerImageUrl = signed?.data?.signedUrl || supabase.storage.from(bucket).getPublicUrl(announcement.banner_image).data.publicUrl;
         } catch (err) {
-          bannerImageUrl = supabase.storage.from(bucket).getPublicUrl(announcement.banner_image).data.publicUrl;
+          console.warn(`Failed to create signed URL for announcement image:`, err);
+          try {
+            bannerImageUrl = supabase.storage.from(bucket).getPublicUrl(announcement.banner_image).data.publicUrl;
+          } catch (pubErr) {
+            console.warn(`Failed to get public URL for announcement image`);
+            bannerImageUrl = null;
+          }
         }
       }
       return { ...announcement, banner_image_url: bannerImageUrl };
@@ -375,25 +384,38 @@ app.get('/api/announcements', async (req: express.Request, res: express.Response
 
     res.json({ announcements: announcementsWithImages });
   } catch (err: any) {
-    console.error('list active announcements error', err?.message || err);
-    res.status(500).json({ error: 'failed to list announcements' });
+    console.error('list active announcements error:', err?.message || err, 'Stack:', err?.stack);
+    res.status(500).json({ error: 'failed to list announcements', details: err?.message });
   }
 });
 
 // Public: list products
 app.get('/api/products', async (req: express.Request, res: express.Response) => {
   try {
+    console.log('Fetching products...');
     const all = await db.select().from(products).limit(100);
+    console.log(`Found ${all.length} products`);
+    
     const ids = all.map((p: any) => p.id);
     let images: any[] = [];
-    if (ids.length) {
-      // fetch recent images and filter in JS (simple approach for dev)
-      images = await db.select().from(product_images).limit(1000);
-      images = images.filter((img: any) => ids.includes(img.product_id));
+    
+    if (ids.length > 0) {
+      try {
+        console.log(`Fetching images for ${ids.length} products...`);
+        images = await db.select().from(product_images).limit(1000);
+        console.log(`Found ${images.length} total images`);
+        images = images.filter((img: any) => ids.includes(img.product_id));
+        console.log(`Filtered to ${images.length} images for these products`);
+      } catch (imgErr: any) {
+        console.warn('Error fetching images, continuing without images:', imgErr?.message);
+        images = [];
+      }
     }
 
     // attach images to products and convert storage keys to signed URLs
     const bucket = process.env.SUPABASE_BUCKET || 'images';
+    console.log(`Using bucket: ${bucket}`);
+    
     const productsWithImages = await Promise.all(all.map(async (p: any) => {
       const imgs = images.filter(img => img.product_id === p.id);
       const converted = await Promise.all(imgs.map(async (img: any) => {
@@ -401,15 +423,23 @@ app.get('/api/products', async (req: express.Request, res: express.Response) => 
           const signed = await supabase.storage.from(bucket).createSignedUrl(img.url, 60 * 60);
           return { ...img, url: signed?.data?.signedUrl || supabase.storage.from(bucket).getPublicUrl(img.url).data.publicUrl };
         } catch (err) {
-          return { ...img, url: supabase.storage.from(bucket).getPublicUrl(img.url).data.publicUrl };
+          console.warn(`Failed to create signed URL for ${img.url}, using public URL:`, err);
+          try {
+            return { ...img, url: supabase.storage.from(bucket).getPublicUrl(img.url).data.publicUrl };
+          } catch (pubErr) {
+            console.warn(`Failed to get public URL for ${img.url}`);
+            return { ...img, url: null };
+          }
         }
       }));
       return { ...p, images: converted };
     }));
+    
+    console.log(`Returning ${productsWithImages.length} products with images`);
     res.json({ products: productsWithImages });
   } catch (err: any) {
-    console.error('list products error', err?.message || err);
-    res.status(500).json({ error: 'failed to list products' });
+    console.error('list products error:', err?.message || err, 'Stack:', err?.stack);
+    res.status(500).json({ error: 'failed to list products', details: err?.message });
   }
 });
 
@@ -540,7 +570,7 @@ async function seedAdminUser() {
     });
 
     if (!existingAdmin) {
-      const hashedPassword = await bcrypt.hash('adminpoolbeanbags123$', 10);
+      const hashedPassword = await bcrypt.hash('password', 10);
       await db.insert(users).values({
         email: 'admin@poolbeanbags.com',
         password_hash: hashedPassword,
@@ -548,9 +578,13 @@ async function seedAdminUser() {
         first_name: 'Admin',
         last_name: 'User'
       });
-      console.log('Admin user created successfully');
+      console.log('Admin user created successfully with email: admin@poolbeanbags.com');
     } else {
       console.log('Admin user already exists');
+      // Update password to new value
+      const hashedPassword = await bcrypt.hash('password', 10);
+      await db.update(users).set({ password_hash: hashedPassword }).where(eq(users.email, 'admin@poolbeanbags.com'));
+      console.log('Admin password updated to: password');
     }
   } catch (err) {
     console.error('Error seeding admin user:', err);
@@ -835,55 +869,58 @@ app.get('/api/orders/:id', async (req: express.Request, res: express.Response) =
 // Admin: Get all orders
 app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
   try {
+    console.log('Fetching all orders for admin...');
     const allOrders = await db.query.orders.findMany({
       orderBy: desc(orders.created_at)
     });
+    console.log(`Found ${allOrders.length} orders, building details...`);
 
     const ordersWithDetails = await Promise.all(
       allOrders.map(async (order) => {
-        const items = await db.query.order_items.findMany({
-          where: eq(order_items.order_id, order.id)
-        });
+        try {
+          const items = await db.query.order_items.findMany({
+            where: eq(order_items.order_id, order.id)
+          });
 
-        const delivery = await db.query.order_delivery.findFirst({
-          where: eq(order_delivery.order_id, order.id)
-        });
+          const delivery = await db.query.order_delivery.findFirst({
+            where: eq(order_delivery.order_id, order.id)
+          });
 
-        const customer = order.user_id ? await db.query.users.findFirst({
-          where: eq(users.id, order.user_id)
-        }) : null;
+          const customer = order.user_id ? await db.query.users.findFirst({
+            where: eq(users.id, order.user_id)
+          }) : null;
 
-        // fetch shipping address details if present
-        let shippingAddressFull = null;
-        if (delivery && delivery.shipping_address_id) {
-          try {
-            const addr = await db.query.addresses.findFirst({ where: eq(addresses.id, delivery.shipping_address_id) });
-            if (addr) {
-              shippingAddressFull = {
-                addressLine1: addr.address_line_1,
-                addressLine2: addr.address_line_2,
-                city: addr.city,
-                state: addr.state,
-                postalCode: addr.postal_code,
-                country: addr.country
-              };
+          // fetch shipping address details if present
+          let shippingAddressFull = null;
+          if (delivery && delivery.shipping_address_id) {
+            try {
+              const addr = await db.query.addresses.findFirst({ where: eq(addresses.id, delivery.shipping_address_id) });
+              if (addr) {
+                shippingAddressFull = {
+                  addressLine1: addr.address_line_1,
+                  addressLine2: addr.address_line_2,
+                  city: addr.city,
+                  state: addr.state,
+                  postalCode: addr.postal_code,
+                  country: addr.country
+                };
+              }
+            } catch (err) {
+              console.error('Error fetching shipping address for order', order.id, err);
             }
-          } catch (err) {
-            console.error('Error fetching shipping address for order', order.id, err);
           }
-        }
 
-        // If we don't have a shipping address row, check for a fallback in delivery.notes
-        if (!shippingAddressFull && delivery && delivery.notes) {
-          try {
-            const parsed = JSON.parse(delivery.notes);
-            if (parsed && parsed.shippingAddressFallback) {
-              shippingAddressFull = parsed.shippingAddressFallback;
+          // If we don't have a shipping address row, check for a fallback in delivery.notes
+          if (!shippingAddressFull && delivery && delivery.notes) {
+            try {
+              const parsed = JSON.parse(delivery.notes);
+              if (parsed && parsed.shippingAddressFallback) {
+                shippingAddressFull = parsed.shippingAddressFallback;
+              }
+            } catch (err) {
+              // ignore parse errors
             }
-          } catch (err) {
-            // ignore parse errors
           }
-        }
 
         // Build a delivery object that includes the resolved shipping address and a flag
         const deliveryWithAddress = delivery ? { ...delivery, shippingAddress: shippingAddressFull } : delivery;
@@ -906,13 +943,32 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: expres
           shippingAddress: shippingAddressFull,
           needsShipping
         };
+        } catch (err) {
+          console.error('Error building order details for order', order.id, err);
+          // Return minimal order data if details fail
+          return {
+            id: order.id,
+            orderNo: order.order_no,
+            status: order.status,
+            paymentStatus: order.payment_status,
+            total: order.total_cents / 100,
+            createdAt: order.created_at,
+            customer: null,
+            items: [],
+            delivery: null,
+            shippingAddress: null,
+            needsShipping: false,
+            error: 'Failed to load full order details'
+          };
+        }
       })
     );
 
+    console.log(`Returning ${ordersWithDetails.length} orders`);
     res.json({ orders: ordersWithDetails });
-  } catch (err) {
-    console.error('Get admin orders error:', err);
-    res.status(500).json({ error: 'Failed to get orders' });
+  } catch (err: any) {
+    console.error('Get admin orders error:', err?.message || err, 'Stack:', err?.stack);
+    res.status(500).json({ error: 'Failed to get orders', details: err?.message });
   }
 });
 
@@ -1030,11 +1086,13 @@ app.post('/api/contact', async (req: express.Request, res: express.Response) => 
 // Admin endpoint to get all contacts
 app.get('/api/admin/contacts', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
   try {
+    console.log('Fetching all contacts for admin...');
     const allContacts = await db.select().from(contacts).orderBy(desc(contacts.created_at));
+    console.log(`Found ${allContacts.length} contacts`);
     res.json({ contacts: allContacts });
   } catch (err: any) {
-    console.error('Get contacts error:', err?.message || err);
-    res.status(500).json({ error: 'Failed to get contacts' });
+    console.error('Get contacts error:', err?.message || err, 'Stack:', err?.stack);
+    res.status(500).json({ error: 'Failed to get contacts', details: err?.message });
   }
 });
 
