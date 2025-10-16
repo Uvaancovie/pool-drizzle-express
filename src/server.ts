@@ -1106,5 +1106,6 @@ app.patch('/api/admin/contacts/:id/read', authenticateToken, requireAdmin, async
 
 app.listen(port, async () => {
   console.log(`Backend listening on http://localhost:${port}`);
+  console.log('CORS: Allowing all origins for cross-origin requests');
   await seedAdminUser();
 });
