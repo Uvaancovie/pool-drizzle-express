@@ -649,7 +649,8 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
       }
 
       if (resolvedItems.length === 0) {
-        throw new Error('No valid products in cart');
+        // Return 400 with details so frontend can show a helpful message and debug
+        return res.status(400).json({ error: 'No valid products in cart', itemsReceived: items });
       }
 
       await OrderItem.insertMany(resolvedItems);
