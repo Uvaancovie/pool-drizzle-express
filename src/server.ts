@@ -268,6 +268,42 @@ app.get('/api/products/:slug', async (req: express.Request, res: express.Respons
   }
 });
 
+// ============================================
+// CLOUDINARY SIGNED UPLOAD
+// ============================================
+
+app.post('/api/uploads/sign', authenticateToken, requireAdmin, (req: express.Request, res: express.Response) => {
+  try {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const { slug = 'product', uuid = Date.now().toString() } = req.body;
+    const folder = `${process.env.CLOUDINARY_UPLOAD_FOLDER || 'poolbeanbags/products'}/${slug}/${uuid}`;
+    const public_id = `${slug}-${uuid}`;
+    
+    // Cloudinary expects parameters in alphabetical order
+    const paramsToSign = `folder=${folder}&public_id=${public_id}&timestamp=${timestamp}`;
+    const signature = crypto
+      .createHash('sha1')
+      .update(paramsToSign + process.env.CLOUDINARY_API_SECRET)
+      .digest('hex');
+    
+    res.json({
+      timestamp,
+      folder,
+      public_id,
+      signature,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME
+    });
+  } catch (err: any) {
+    console.error('Sign upload error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to generate upload signature' });
+  }
+});
+
+// ============================================
+// PRODUCT CRUD
+// ============================================
+
 app.post('/api/admin/products', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
   try {
     const { images, ...productData } = req.body;
@@ -323,6 +359,31 @@ app.put('/api/admin/products/:id', authenticateToken, requireAdmin, async (req: 
   } catch (err: any) {
     console.error('Update product error:', err?.message || err);
     res.status(500).json({ error: 'Failed to update product' });
+  }
+});
+
+// Add image to product
+app.post('/api/admin/products/:id/images', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const { id } = req.params;
+    const { url, alt, sort = 0 } = req.body;
+
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const image = await ProductImage.create({
+      product_id: id,
+      url,
+      alt: alt || product.title,
+      sort
+    });
+
+    res.json(image);
+  } catch (err: any) {
+    console.error('Add product image error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to add image' });
   }
 });
 
