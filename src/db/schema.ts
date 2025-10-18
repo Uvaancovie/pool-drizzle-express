@@ -48,7 +48,7 @@ export const product_variants = pgTable('product_variants', {
   id: serial('id').primaryKey(),
   product_id: integer('product_id').notNull(),
   sku: text('sku').notNull(),
-  options: jsonb('options').$type<any>().notNull(),
+  options: jsonb('options').notNull(),
   stock: integer('stock').notNull().default(0),
   price_override_cents: integer('price_override_cents'),
   created_at: timestamp('created_at').notNull().defaultNow()
