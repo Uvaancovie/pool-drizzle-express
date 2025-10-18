@@ -539,7 +539,7 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: expres
       })
     );
 
-    res.json(ordersWithDetails);
+    res.json({ orders: ordersWithDetails });
   } catch (err: any) {
     console.error('Get orders error:', err?.message || err);
     res.status(500).json({ error: 'Failed to fetch orders' });
