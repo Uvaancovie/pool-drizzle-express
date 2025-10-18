@@ -619,7 +619,7 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
       await OrderItem.insertMany(
         items.map((item: any) => ({
           order_id: order._id,
-          product_id: item.product_id || item.productId || item.id,
+          product_id: item.product_id || item.productId || item.id || 'unknown',
           product_slug: item.product_slug || item.slug || 'unknown',
           product_title: item.product_title || item.title || 'Product',
           quantity: item.quantity || 1,
