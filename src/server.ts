@@ -40,6 +40,8 @@ app.options('*', cors());
 connectDB();
 
 // JWT Authentication middleware
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -48,7 +50,7 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err: any, user: any) => {
+  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
     if (err) {
       return res.status(403).json({ error: 'Invalid token' });
     }
@@ -113,7 +115,7 @@ app.post('/api/auth/login', async (req: express.Request, res: express.Response) 
 
     const token = jwt.sign(
       { id: user._id, email: user.email, role: user.role },
-      process.env.JWT_SECRET || 'your-secret-key',
+      JWT_SECRET,
       { expiresIn: '24h' }
     );
 
