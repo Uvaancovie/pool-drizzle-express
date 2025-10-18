@@ -58,7 +58,7 @@ async function seedDatabase() {
 
     await ProductImage.create({
       product_id: product1._id,
-      url: 'https://res.cloudinary.com/dir468aeq/image/upload/v1/poolbeanbags/products/sample-blue-beanbag.jpg',
+      url: 'https://res.cloudinary.com/dir468aeq/image/upload/v1728938400/poolbeanbags/products/blue-beanbag_o9k3zq.jpg',
       alt: 'Classic Pool Beanbag - Ocean Blue',
       sort: 0
     });
@@ -76,7 +76,7 @@ async function seedDatabase() {
 
     await ProductImage.create({
       product_id: product2._id,
-      url: 'https://res.cloudinary.com/dir468aeq/image/upload/v1/poolbeanbags/products/sample-pink-beanbag.jpg',
+      url: 'https://res.cloudinary.com/dir468aeq/image/upload/v1728938400/poolbeanbags/products/pink-beanbag_a7m2kx.jpg',
       alt: 'Deluxe Pool Beanbag - Sunset Pink',
       sort: 0
     });
@@ -96,7 +96,7 @@ async function seedDatabase() {
 
     await ProductImage.create({
       product_id: product3._id,
-      url: 'https://res.cloudinary.com/dir468aeq/image/upload/v1/poolbeanbags/products/sample-green-beanbag.jpg',
+      url: 'https://res.cloudinary.com/dir468aeq/image/upload/v1728938400/poolbeanbags/products/green-beanbag_p4j9bv.jpg',
       alt: 'Kids Pool Beanbag - Lime Green',
       sort: 0
     });
@@ -114,7 +114,7 @@ async function seedDatabase() {
 
     await ProductImage.create({
       product_id: product4._id,
-      url: 'https://res.cloudinary.com/dir468aeq/image/upload/v1/poolbeanbags/products/sample-black-beanbag.jpg',
+      url: 'https://res.cloudinary.com/dir468aeq/image/upload/v1728938400/poolbeanbags/products/black-beanbag_r8f2mn.jpg',
       alt: 'Premium Pool Beanbag - Matte Black',
       sort: 0
     });
@@ -134,7 +134,7 @@ async function seedDatabase() {
 
     await ProductImage.create({
       product_id: product5._id,
-      url: 'https://res.cloudinary.com/dir468aeq/image/upload/v1/poolbeanbags/products/sample-white-beanbag.jpg',
+      url: 'https://res.cloudinary.com/dir468aeq/image/upload/v1728938400/poolbeanbags/products/white-beanbag_w2k5lp.jpg',
       alt: 'Double Pool Beanbag - Pure White',
       sort: 0
     });

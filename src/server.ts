@@ -139,7 +139,15 @@ app.get('/api/auth/me', authenticateToken, async (req: express.Request, res: exp
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    res.json(user);
+    res.json({
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        first_name: user.first_name,
+        last_name: user.last_name
+      }
+    });
   } catch (err: any) {
     console.error('Get user error:', err?.message || err);
     res.status(500).json({ error: 'Failed to get user' });
