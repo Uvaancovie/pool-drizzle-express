@@ -225,6 +225,7 @@ app.get('/api/products', async (req: express.Request, res: express.Response) => 
         const images = await ProductImage.find({ product_id: product._id }).sort({ sort: 1 });
         return {
           ...product.toObject(),
+          id: product._id, // Add id alias for frontend compatibility
           images: images.map((img: any) => ({
             id: img._id,
             url: img.url,
@@ -255,6 +256,7 @@ app.get('/api/products/:slug', async (req: express.Request, res: express.Respons
 
     res.json({
       ...product.toObject(),
+      id: product._id, // Add id alias
       images: images.map((img: any) => ({
         id: img._id,
         url: img.url,
@@ -618,8 +620,11 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
         items.map((item: any) => ({
           order_id: order._id,
           product_id: item.product_id,
+          product_slug: item.product_slug || item.slug || 'unknown',
+          product_title: item.product_title || item.title || 'Product',
           quantity: item.quantity || 1,
-          unit_price_cents: item.unit_price_cents || 0
+          unit_price_cents: item.unit_price_cents || 0,
+          total_price_cents: item.total_price_cents || (item.quantity || 1) * (item.unit_price_cents || 0)
         }))
       );
     }
