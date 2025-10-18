@@ -616,26 +616,43 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
 
     // Create order items
     if (items && items.length > 0) {
-      const validItems = items.filter((item: any) => {
-        const productId = item.product_id || item.productId || item.id;
-        return productId && productId !== 'unknown' && productId.length === 24;
-      });
+      const resolvedItems: any[] = [];
 
-      if (validItems.length === 0) {
+      for (const item of items) {
+        const raw = item.product_id || item.productId || item.id || item.product_slug || item.slug;
+        let resolvedProductId: string | null = null;
+        let productRecord: any = null;
+
+        if (raw && typeof raw === 'string') {
+          // if already looks like an ObjectId, use it
+          if (raw.length === 24) {
+            resolvedProductId = raw;
+            productRecord = await Product.findById(raw).lean();
+          } else {
+            // try resolving by slug or alternate id fields
+            productRecord = await Product.findOne({ $or: [{ slug: raw }, { id: raw }] }).lean();
+            if (productRecord) resolvedProductId = productRecord._id.toString();
+          }
+        }
+
+        if (resolvedProductId) {
+          resolvedItems.push({
+            order_id: order._id,
+            product_id: resolvedProductId,
+            product_slug: productRecord?.slug || item.product_slug || item.slug || 'unknown',
+            product_title: productRecord?.title || item.product_title || item.title || 'Product',
+            quantity: item.quantity || 1,
+            unit_price_cents: item.unit_price_cents || item.price || 0,
+            total_price_cents: item.total_price_cents || ((item.quantity || 1) * (item.unit_price_cents || item.price || 0))
+          });
+        }
+      }
+
+      if (resolvedItems.length === 0) {
         throw new Error('No valid products in cart');
       }
 
-      await OrderItem.insertMany(
-        validItems.map((item: any) => ({
-          order_id: order._id,
-          product_id: item.product_id || item.productId || item.id,
-          product_slug: item.product_slug || item.slug || 'unknown',
-          product_title: item.product_title || item.title || 'Product',
-          quantity: item.quantity || 1,
-          unit_price_cents: item.unit_price_cents || item.price || 0,
-          total_price_cents: item.total_price_cents || ((item.quantity || 1) * (item.unit_price_cents || item.price || 0))
-        }))
-      );
+      await OrderItem.insertMany(resolvedItems);
     }
 
     // Create delivery info
@@ -647,7 +664,8 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
       });
     }
 
-    res.status(201).json({ order_id: order._id, order_no: orderNo });
+  // Return the response shape the frontend expects
+  res.status(201).json({ order: { id: order._id, orderNo } });
   } catch (err: any) {
     console.error('Create order error:', err);
     res.status(500).json({ error: 'Failed to create order', details: err.message });
