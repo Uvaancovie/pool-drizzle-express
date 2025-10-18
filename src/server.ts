@@ -674,14 +674,18 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
         }
 
         if (resolvedProductId) {
+          const unitPrice = item.unit_price_cents || item.price || productRecord?.base_price_cents || 0;
+          const qty = item.quantity || 1;
+          const totalPrice = item.total_price_cents || (qty * unitPrice);
+
           resolvedItems.push({
             order_id: order._id,
             product_id: resolvedProductId,
             product_slug: productRecord?.slug || item.product_slug || item.slug || 'unknown',
             product_title: productRecord?.title || item.product_title || item.title || 'Product',
-            quantity: item.quantity || 1,
-            unit_price_cents: item.unit_price_cents || item.price || 0,
-            total_price_cents: item.total_price_cents || ((item.quantity || 1) * (item.unit_price_cents || item.price || 0))
+            quantity: qty,
+            unit_price_cents: unitPrice,
+            total_price_cents: totalPrice
           });
         }
       }
@@ -691,7 +695,11 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
         return res.status(400).json({ error: 'No valid products in cart', itemsReceived: items });
       }
 
-      await OrderItem.insertMany(resolvedItems);
+      const inserted = await OrderItem.insertMany(resolvedItems);
+
+      // Compute subtotal and update order totals (assume no shipping/tax for now)
+      const subtotalCents = inserted.reduce((sum: number, it: any) => sum + (it.total_price_cents || 0), 0);
+      await Order.findByIdAndUpdate(order._id, { subtotal_cents: subtotalCents, total_cents: subtotalCents });
     }
 
     // Create delivery info
