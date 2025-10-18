@@ -616,22 +616,25 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
 
     // Create order items
     if (items && items.length > 0) {
-      console.log('Order items received:', JSON.stringify(items, null, 2));
+      const validItems = items.filter((item: any) => {
+        const productId = item.product_id || item.productId || item.id;
+        return productId && productId !== 'unknown' && productId.length === 24;
+      });
+
+      if (validItems.length === 0) {
+        throw new Error('No valid products in cart');
+      }
+
       await OrderItem.insertMany(
-        items.map((item: any) => {
-          console.log('Processing item:', JSON.stringify(item, null, 2));
-          const productId = item.product_id || item.productId || item.id;
-          console.log('Using product_id:', productId, 'type:', typeof productId);
-          return {
-            order_id: order._id,
-            product_id: productId,
-            product_slug: item.product_slug || item.slug || 'unknown',
-            product_title: item.product_title || item.title || 'Product',
-            quantity: item.quantity || 1,
-            unit_price_cents: item.unit_price_cents || item.price || 0,
-            total_price_cents: item.total_price_cents || ((item.quantity || 1) * (item.unit_price_cents || item.price || 0))
-          };
-        })
+        validItems.map((item: any) => ({
+          order_id: order._id,
+          product_id: item.product_id || item.productId || item.id,
+          product_slug: item.product_slug || item.slug || 'unknown',
+          product_title: item.product_title || item.title || 'Product',
+          quantity: item.quantity || 1,
+          unit_price_cents: item.unit_price_cents || item.price || 0,
+          total_price_cents: item.total_price_cents || ((item.quantity || 1) * (item.unit_price_cents || item.price || 0))
+        }))
       );
     }
 
