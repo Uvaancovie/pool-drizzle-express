@@ -616,20 +616,16 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
 
     // Create order items
     if (items && items.length > 0) {
-      console.log('Order items received:', items); // Debug log
       await OrderItem.insertMany(
-        items.map((item: any) => {
-          console.log('Processing item:', item); // Debug log
-          return {
-            order_id: order._id,
-            product_id: item.product_id || item.productId || item.id || 'unknown',
-            product_slug: item.product_slug || item.slug || 'unknown',
-            product_title: item.product_title || item.title || 'Product',
-            quantity: item.quantity || 1,
-            unit_price_cents: item.unit_price_cents || item.price || 0,
-            total_price_cents: item.total_price_cents || ((item.quantity || 1) * (item.unit_price_cents || item.price || 0))
-          };
-        })
+        items.map((item: any) => ({
+          order_id: order._id,
+          product_id: item.product_id || item.productId || item.id || 'unknown',
+          product_slug: item.product_slug || item.slug || 'unknown',
+          product_title: item.product_title || item.title || 'Product',
+          quantity: item.quantity || 1,
+          unit_price_cents: item.unit_price_cents || item.price || 0,
+          total_price_cents: item.total_price_cents || ((item.quantity || 1) * (item.unit_price_cents || item.price || 0))
+        }))
       );
     }
 
