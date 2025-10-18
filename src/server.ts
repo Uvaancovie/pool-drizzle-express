@@ -600,12 +600,16 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
     // Generate order number
     const orderNo = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-    // Create order
+    // Create order with defaults
     const order = await Order.create({
-      ...orderData,
       order_no: orderNo,
+      status: orderData.status || 'pending',
+      payment_status: orderData.payment_status || 'unpaid',
+      total_cents: orderData.total_cents || 0,
       shipping_address_id: shippingAddressId,
-      billing_address_id: billingAddressId
+      billing_address_id: billingAddressId,
+      customer_email: orderData.customer_email,
+      customer_name: orderData.customer_name
     });
 
     // Create order items
@@ -613,7 +617,9 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
       await OrderItem.insertMany(
         items.map((item: any) => ({
           order_id: order._id,
-          ...item
+          product_id: item.product_id,
+          quantity: item.quantity || 1,
+          unit_price_cents: item.unit_price_cents || 0
         }))
       );
     }
@@ -622,14 +628,15 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
     if (delivery_info) {
       await OrderDelivery.create({
         order_id: order._id,
+        method: delivery_info.method || 'standard',
         ...delivery_info
       });
     }
 
     res.status(201).json({ order_id: order._id, order_no: orderNo });
   } catch (err: any) {
-    console.error('Create order error:', err?.message || err);
-    res.status(500).json({ error: 'Failed to create order' });
+    console.error('Create order error:', err);
+    res.status(500).json({ error: 'Failed to create order', details: err.message });
   }
 });
 
