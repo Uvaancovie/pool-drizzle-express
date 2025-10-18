@@ -581,6 +581,44 @@ app.get('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req: ex
   }
 });
 
+// Public: fetch a single order by id (used by order-confirmation page)
+app.get('/api/orders/:id', async (req: express.Request, res: express.Response) => {
+  try {
+    const { id } = req.params;
+    const order = await Order.findById(id);
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const items = await OrderItem.find({ order_id: id });
+    const delivery = await OrderDelivery.findOne({ order_id: id });
+
+    const shippingAddress = order.shipping_address_id ? await Address.findById(order.shipping_address_id) : null;
+    const billingAddress = order.billing_address_id ? await Address.findById(order.billing_address_id) : null;
+
+    // Normalize totals so frontend can render (frontend expects order.total to exist)
+    const total = (order as any).total_cents ? (order as any).total_cents / 100 : ((order as any).total || 0);
+
+    const publicOrder = {
+      id: order._id,
+      orderNo: order.order_no,
+      status: order.status,
+      total,
+      createdAt: order.created_at,
+      items,
+      delivery: delivery || null,
+      shipping_address: shippingAddress || null,
+      billing_address: billingAddress || null
+    };
+
+    res.json({ order: publicOrder });
+  } catch (err: any) {
+    console.error('Get public order error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to fetch order' });
+  }
+});
+
 app.post('/api/orders', async (req: express.Request, res: express.Response) => {
   try {
     const { items, shipping_address, billing_address, delivery_info, ...orderData } = req.body;
