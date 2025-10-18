@@ -513,12 +513,12 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: expres
 
     const orders = await Order.find(query).sort({ created_at: -1 });
     
-    // Fetch related data for each order
+    // Fetch related data for each order and normalize fields for frontend
     const ordersWithDetails = await Promise.all(
       orders.map(async (order: any) => {
         const items = await OrderItem.find({ order_id: order._id });
         const delivery = await OrderDelivery.findOne({ order_id: order._id });
-        
+
         let shippingAddress = null;
         let billingAddress = null;
 
@@ -529,8 +529,20 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: expres
           billingAddress = await Address.findById(order.billing_address_id);
         }
 
+        const total = (order.total_cents !== undefined && order.total_cents !== null)
+          ? (order.total_cents / 100)
+          : (order.total || 0);
+
+        const customer = order.customer_name || order.customer_email || order.customer || null;
+
         return {
-          ...order.toObject(),
+          id: order._id,
+          orderNo: order.order_no,
+          status: order.status,
+          payment_status: order.payment_status,
+          total,
+          createdAt: order.created_at || order.createdAt || null,
+          customer: customer,
           items,
           delivery,
           shipping_address: shippingAddress,
