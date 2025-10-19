@@ -1,12 +1,14 @@
 ﻿import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
+import compression from 'compression';
 import dotenv from 'dotenv';
 import multer from 'multer';
 import PDFDocument from 'pdfkit';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import Redis from 'ioredis';
 import { connectDB } from './db/mongoose';
 import { 
   User, 
@@ -25,6 +27,9 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 4000;
 
+// Enable HTTP compression (gzip/deflate)
+app.use(compression());
+
 app.use(bodyParser.json());
 
 // Configure CORS
@@ -35,6 +40,18 @@ app.use(cors({
 }));
 
 app.options('*', cors());
+
+// Initialize Redis cache (optional - works without Redis for now)
+let redisClient: Redis | null = null;
+if (process.env.REDIS_URL) {
+  try {
+    redisClient = new Redis(process.env.REDIS_URL);
+    redisClient.on('error', (err) => console.error('Redis Client Error', err));
+    redisClient.on('connect', () => console.log('✓ Redis connected'));
+  } catch (err) {
+    console.warn('Redis not available, skipping cache');
+  }
+}
 
 // Connect to MongoDB
 connectDB();
@@ -200,6 +217,24 @@ app.post('/api/uploads/sign', authenticateToken, requireAdmin, (req: express.Req
 app.get('/api/products', async (req: express.Request, res: express.Response) => {
   try {
     const { search, status, featured } = req.query;
+    
+    // Build cache key from query params
+    const cacheKey = `products:${JSON.stringify({ search, status, featured })}`;
+    
+    // Try cache first
+    if (redisClient) {
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+          res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+          res.set('X-Cache', 'HIT');
+          return res.json(JSON.parse(cached));
+        }
+      } catch (cacheErr) {
+        console.warn('Cache read error:', cacheErr);
+      }
+    }
+
     const query: any = {};
 
     if (search) {
@@ -217,14 +252,18 @@ app.get('/api/products', async (req: express.Request, res: express.Response) => 
       query.is_promotional = true;
     }
 
-    const products = await Product.find(query).sort({ created_at: -1 });
+    const products = await Product.find(query)
+      .sort({ created_at: -1 })
+      .lean();  // Use lean() for faster queries when you don't need Mongoose documents
     
     // Fetch images for each product
     const productsWithImages = await Promise.all(
       products.map(async (product: any) => {
-        const images = await ProductImage.find({ product_id: product._id }).sort({ sort: 1 });
+        const images = await ProductImage.find({ product_id: product._id })
+          .sort({ sort: 1 })
+          .lean();
         return {
-          ...product.toObject(),
+          ...product,
           id: product._id, // Add id alias for frontend compatibility
           images: images.map((img: any) => ({
             id: img._id,
@@ -236,6 +275,17 @@ app.get('/api/products', async (req: express.Request, res: express.Response) => 
       })
     );
 
+    // Cache the result for 60 seconds
+    if (redisClient) {
+      try {
+        await redisClient.set(cacheKey, JSON.stringify(productsWithImages), 'EX', 60);
+      } catch (cacheErr) {
+        console.warn('Cache write error:', cacheErr);
+      }
+    }
+
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.set('X-Cache', 'MISS');
     res.json(productsWithImages);
   } catch (err: any) {
     console.error('Get products error:', err?.message || err);
@@ -246,24 +296,60 @@ app.get('/api/products', async (req: express.Request, res: express.Response) => 
 app.get('/api/products/:slug', async (req: express.Request, res: express.Response) => {
   try {
     const { slug } = req.params;
-    const product = await Product.findOne({ slug });
+    const cacheKey = `product:${slug}`;
+
+    // Try cache first
+    if (redisClient) {
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+          res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
+          res.set('X-Cache', 'HIT');
+          return res.json(JSON.parse(cached));
+        }
+      } catch (cacheErr) {
+        console.warn('Cache read error:', cacheErr);
+      }
+    }
+
+    const product = await Product.findOne({ slug }).lean();
 
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const images = await ProductImage.find({ product_id: product._id }).sort({ sort: 1 });
+    const images = await ProductImage.find({ product_id: product._id })
+      .sort({ sort: 1 })
+      .lean();
 
-    res.json({
-      ...product.toObject(),
-      id: product._id, // Add id alias
+    const productWithImages = {
+      ...product,
+      id: product._id,
       images: images.map((img: any) => ({
         id: img._id,
         url: img.url,
         alt: img.alt,
         sort: img.sort
       }))
-    });
+    };
+
+    // Cache for 2 minutes
+    if (redisClient) {
+      try {
+        await redisClient.set(cacheKey, JSON.stringify({ product: productWithImages }), 'EX', 120);
+      } catch (cacheErr) {
+        console.warn('Cache write error:', cacheErr);
+      }
+    }
+
+    res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
+    res.set('X-Cache', 'MISS');
+    res.json({ product: productWithImages });
+  } catch (err: any) {
+    console.error('Get product error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to fetch product' });
+  }
+});
   } catch (err: any) {
     console.error('Get product error:', err?.message || err);
     res.status(500).json({ error: 'Failed to fetch product' });
@@ -354,6 +440,18 @@ app.put('/api/admin/products/:id', authenticateToken, requireAdmin, async (req: 
             sort: img.sort || index
           }))
         );
+      }
+    }
+
+    // Invalidate cache for this product and product list
+    if (redisClient) {
+      try {
+        await redisClient.del(`product:${product.slug}`);
+        // Clear all product list cache keys (simple approach - delete pattern)
+        const keys = await redisClient.keys('products:*');
+        if (keys.length > 0) await redisClient.del(...keys);
+      } catch (cacheErr) {
+        console.warn('Cache invalidation error:', cacheErr);
       }
     }
 

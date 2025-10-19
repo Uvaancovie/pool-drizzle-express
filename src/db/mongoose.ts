@@ -14,6 +14,11 @@ export async function connectDB() {
   try {
     await mongoose.connect(MONGODB_URI, {
       dbName: DB_NAME,
+      maxPoolSize: 50,        // Increase connection pool for better concurrency
+      minPoolSize: 5,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      family: 4               // Use IPv4, skip IPv6 lookup
     });
     console.log('✅ MongoDB connected successfully');
     console.log(`Database: ${DB_NAME}`);

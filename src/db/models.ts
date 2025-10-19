@@ -135,22 +135,22 @@ const UserSchema = new Schema<IUser>({
 });
 
 const ProductSchema = new Schema<IProduct>({
-  slug: { type: String, required: true },
+  slug: { type: String, required: true, index: true },  // Add index for fast lookups
   title: { type: String, required: true },
   description: String,
-  status: { type: String, required: true, default: 'draft' },
+  status: { type: String, required: true, default: 'draft', index: true },  // Index for filtering
   base_price_cents: { type: Number, required: true, default: 0 },
-  is_promotional: { type: Boolean, required: true, default: false },
+  is_promotional: { type: Boolean, required: true, default: false, index: true },  // Index for featured queries
   promotion_text: String,
   promotion_discount_percent: Number,
   seo_title: String,
   seo_description: String,
-  created_at: { type: Date, default: Date.now },
+  created_at: { type: Date, default: Date.now, index: -1 },  // Index for sorting by date (descending)
   updated_at: { type: Date, default: Date.now }
 });
 
 const ProductImageSchema = new Schema<IProductImage>({
-  product_id: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+  product_id: { type: Schema.Types.ObjectId, ref: 'Product', required: true, index: true },  // Index for fast product image lookup
   url: { type: String, required: true },
   alt: { type: String, required: true },
   sort: { type: Number, required: true, default: 0 },
@@ -158,7 +158,7 @@ const ProductImageSchema = new Schema<IProductImage>({
 });
 
 const AnnouncementSchema = new Schema<IAnnouncement>({
-  slug: { type: String, required: true },
+  slug: { type: String, required: true, index: true },
   title: { type: String, required: true },
   excerpt: String,
   body_richtext: String,
@@ -166,8 +166,8 @@ const AnnouncementSchema = new Schema<IAnnouncement>({
   published_at: Date,
   start_at: Date,
   end_at: Date,
-  is_featured: { type: Boolean, required: true, default: false },
-  created_at: { type: Date, default: Date.now }
+  is_featured: { type: Boolean, required: true, default: false, index: true },
+  created_at: { type: Date, default: Date.now, index: -1 }
 });
 
 const AddressSchema = new Schema<IAddress>({
@@ -187,11 +187,11 @@ const AddressSchema = new Schema<IAddress>({
 });
 
 const OrderSchema = new Schema<IOrder>({
-  order_no: { type: String, required: true },
+  order_no: { type: String, required: true, index: true, unique: true },  // Index for order lookups
   user_id: { type: Schema.Types.ObjectId, ref: 'User' },
   email: String,
-  status: { type: String, required: true, default: 'pending' },
-  payment_status: { type: String, required: true, default: 'pending' },
+  status: { type: String, required: true, default: 'pending', index: true },  // Index for filtering by status
+  payment_status: { type: String, required: true, default: 'pending', index: true },
   subtotal_cents: { type: Number, required: true, default: 0 },
   shipping_cents: { type: Number, required: true, default: 0 },
   discount_cents: { type: Number, required: true, default: 0 },
@@ -201,11 +201,11 @@ const OrderSchema = new Schema<IOrder>({
   billing_address_id: { type: Schema.Types.ObjectId, ref: 'Address' },
   gateway: { type: String, required: true, default: 'ozow' },
   gateway_ref: String,
-  created_at: { type: Date, default: Date.now }
+  created_at: { type: Date, default: Date.now, index: -1 }  // Index for sorting orders by date
 });
 
 const OrderItemSchema = new Schema<IOrderItem>({
-  order_id: { type: Schema.Types.ObjectId, ref: 'Order', required: true },
+  order_id: { type: Schema.Types.ObjectId, ref: 'Order', required: true, index: true },  // Index for order item lookup
   product_id: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
   product_variant_id: { type: Schema.Types.ObjectId },
   quantity: { type: Number, required: true, default: 1 },
@@ -217,7 +217,7 @@ const OrderItemSchema = new Schema<IOrderItem>({
 });
 
 const OrderDeliverySchema = new Schema<IOrderDelivery>({
-  order_id: { type: Schema.Types.ObjectId, ref: 'Order', required: true },
+  order_id: { type: Schema.Types.ObjectId, ref: 'Order', required: true, index: true },  // Index for delivery lookup
   delivery_method: { type: String, required: true },
   pickup_date: Date,
   pickup_time: String,
