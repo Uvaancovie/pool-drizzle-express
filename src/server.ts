@@ -350,11 +350,6 @@ app.get('/api/products/:slug', async (req: express.Request, res: express.Respons
     res.status(500).json({ error: 'Failed to fetch product' });
   }
 });
-  } catch (err: any) {
-    console.error('Get product error:', err?.message || err);
-    res.status(500).json({ error: 'Failed to fetch product' });
-  }
-});
 
 // ============================================
 // CLOUDINARY SIGNED UPLOAD
