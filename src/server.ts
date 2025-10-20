@@ -9,6 +9,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import Redis from 'ioredis';
+import helmet from 'helmet';
 import { connectDB } from './db/mongoose';
 import { 
   User, 
@@ -21,6 +22,9 @@ import {
   OrderDelivery, 
   Contact 
 } from './db/models';
+import shippingRoutes from './routes/shipping';
+import checkoutRoutes from './routes/checkout';
+import payfastRoutes from './routes/payfast-itn';
 
 dotenv.config();
 
@@ -30,11 +34,16 @@ const port = process.env.PORT || 4000;
 // Enable HTTP compression (gzip/deflate)
 app.use(compression());
 
+// Security headers
+app.use(helmet());
+
+// Body parsers
 app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: true })); // Required for PayFast ITN
 
 // Configure CORS
 app.use(cors({
-  origin: true,
+  origin: process.env.CLIENT_ORIGIN || true,
   credentials: true,
   optionsSuccessStatus: 200,
 }));
@@ -105,6 +114,22 @@ async function seedAdminUser() {
     console.error('Error seeding admin user:', err?.message || err);
   }
 }
+
+// =========================
+// HEALTH CHECK
+// =========================
+
+app.get('/api/health', (req: express.Request, res: express.Response) => {
+  res.json({ ok: true, ts: new Date().toISOString() });
+});
+
+// =========================
+// PAYFAST ROUTES
+// =========================
+
+app.use('/api/shipping', shippingRoutes);
+app.use('/api/checkout', checkoutRoutes);
+app.use('/api/payfast', payfastRoutes);
 
 // =========================
 // AUTHENTICATION ROUTES
