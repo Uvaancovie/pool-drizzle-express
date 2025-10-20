@@ -517,7 +517,21 @@ app.get('/api/announcements', async (req: express.Request, res: express.Response
     query.published_at = { $lte: new Date() };
 
     const announcements = await Announcement.find(query).sort({ published_at: -1 });
-    res.json(announcements);
+    const formattedAnnouncements = announcements.map(announcement => ({
+      id: announcement._id,
+      slug: announcement.slug,
+      title: announcement.title,
+      excerpt: announcement.excerpt,
+      body_richtext: announcement.body_richtext,
+      banner_image: announcement.banner_image,
+      banner_image_url: announcement.banner_image, // For compatibility
+      published_at: announcement.published_at,
+      start_at: announcement.start_at,
+      end_at: announcement.end_at,
+      is_featured: announcement.is_featured,
+      created_at: (announcement as any).createdAt || (announcement as any).created_at
+    }));
+    res.json({ announcements: formattedAnnouncements });
   } catch (err: any) {
     console.error('Get announcements error:', err?.message || err);
     res.status(500).json({ error: 'Failed to fetch announcements' });
@@ -543,7 +557,20 @@ app.get('/api/announcements/:slug', async (req: express.Request, res: express.Re
 app.get('/api/admin/announcements', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
   try {
     const announcements = await Announcement.find().sort({ created_at: -1 });
-    res.json(announcements);
+    const formattedAnnouncements = announcements.map(announcement => ({
+      id: announcement._id,
+      slug: announcement.slug,
+      title: announcement.title,
+      excerpt: announcement.excerpt,
+      body_richtext: announcement.body_richtext,
+      banner_image: announcement.banner_image,
+      published_at: announcement.published_at,
+      start_at: announcement.start_at,
+      end_at: announcement.end_at,
+      is_featured: announcement.is_featured,
+      created_at: (announcement as any).createdAt || (announcement as any).created_at
+    }));
+    res.json({ announcements: formattedAnnouncements });
   } catch (err: any) {
     console.error('Get admin announcements error:', err?.message || err);
     res.status(500).json({ error: 'Failed to fetch announcements' });
@@ -552,8 +579,25 @@ app.get('/api/admin/announcements', authenticateToken, requireAdmin, async (req:
 
 app.post('/api/admin/announcements', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
   try {
-    const announcement = await Announcement.create(req.body);
-    res.status(201).json(announcement);
+    const announcementData = {
+      ...req.body,
+      published_at: req.body.published_at || new Date() // Set published_at to now if not provided
+    };
+    const announcement = await Announcement.create(announcementData);
+    const formattedAnnouncement = {
+      id: announcement._id,
+      slug: announcement.slug,
+      title: announcement.title,
+      excerpt: announcement.excerpt,
+      body_richtext: announcement.body_richtext,
+      banner_image: announcement.banner_image,
+      published_at: announcement.published_at,
+      start_at: announcement.start_at,
+      end_at: announcement.end_at,
+      is_featured: announcement.is_featured,
+      created_at: (announcement as any).createdAt || (announcement as any).created_at
+    };
+    res.status(201).json(formattedAnnouncement);
   } catch (err: any) {
     console.error('Create announcement error:', err?.message || err);
     res.status(500).json({ error: 'Failed to create announcement' });
@@ -569,7 +613,21 @@ app.put('/api/admin/announcements/:id', authenticateToken, requireAdmin, async (
       return res.status(404).json({ error: 'Announcement not found' });
     }
 
-    res.json(announcement);
+    const formattedAnnouncement = {
+      id: announcement._id,
+      slug: announcement.slug,
+      title: announcement.title,
+      excerpt: announcement.excerpt,
+      body_richtext: announcement.body_richtext,
+      banner_image: announcement.banner_image,
+      published_at: announcement.published_at,
+      start_at: announcement.start_at,
+      end_at: announcement.end_at,
+      is_featured: announcement.is_featured,
+      created_at: (announcement as any).createdAt || (announcement as any).created_at
+    };
+
+    res.json(formattedAnnouncement);
   } catch (err: any) {
     console.error('Update announcement error:', err?.message || err);
     res.status(500).json({ error: 'Failed to update announcement' });
@@ -626,16 +684,30 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: expres
           ? (order.total_cents / 100)
           : (order.total || 0);
 
-        const customer = order.customer_name || order.customer_email || order.customer || null;
+        // Build customer object from shipping/billing address
+        let customerObj = null;
+        if (shippingAddress) {
+          customerObj = {
+            name: `${shippingAddress.first_name} ${shippingAddress.last_name}`,
+            email: shippingAddress.email,
+            phone: shippingAddress.phone
+          };
+        } else if (billingAddress) {
+          customerObj = {
+            name: `${billingAddress.first_name} ${billingAddress.last_name}`,
+            email: billingAddress.email,
+            phone: billingAddress.phone
+          };
+        }
 
         return {
           id: order._id,
           orderNo: order.order_no,
-          status: order.status,
-          payment_status: order.payment_status,
+          status: order.status || 'pending',
+          paymentStatus: order.payment_status || 'pending',
           total,
-          createdAt: order.created_at || order.createdAt || null,
-          customer: customer,
+          createdAt: order.createdAt || order.created_at || null,
+          customer: customerObj,
           items,
           delivery,
           shipping_address: shippingAddress,
@@ -683,6 +755,108 @@ app.get('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req: ex
   } catch (err: any) {
     console.error('Get order error:', err?.message || err);
     res.status(500).json({ error: 'Failed to fetch order' });
+  }
+});
+
+// Invoice generation endpoint
+app.get('/api/admin/orders/:id/invoice', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const order: any = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const items = await OrderItem.find({ order_id: order._id });
+    const delivery = order.delivery;
+    const shippingAddr = order.shipping_address_id ? await Address.findById(order.shipping_address_id) : null;
+    const billingAddr = order.billing_address_id ? await Address.findById(order.billing_address_id) : null;
+
+    const doc = new PDFDocument({ margin: 50 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=invoice-${order.order_no}.pdf`);
+    doc.pipe(res);
+
+    // Header
+    doc.fontSize(20).text('POOL BEANBAGS', { align: 'center' });
+    doc.fontSize(10).text('Invoice', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(12).text(`Order #: ${order.order_no}`);
+    doc.text(`Date: ${new Date(order.created_at || order.createdAt).toLocaleDateString()}`);
+    doc.text(`Status: ${order.status.toUpperCase()}`);
+    doc.text(`Payment: ${order.payment_status.toUpperCase()}`);
+    doc.moveDown();
+
+    // Delivery Info
+    doc.fontSize(14).text('Delivery Information', { underline: true });
+    doc.fontSize(10);
+    if (delivery) {
+      if (delivery.delivery_method === 'shipping') {
+        doc.text(`Method: Shipping (${delivery.delivery_status})`);
+        if (delivery.tracking_number) doc.text(`Tracking: ${delivery.tracking_number}`);
+        doc.moveDown();
+        if (shippingAddr) {
+          doc.fontSize(12).text('Shipping Address:', { underline: true });
+          doc.fontSize(10).text(`${shippingAddr.first_name} ${shippingAddr.last_name}`);
+          doc.text(shippingAddr.address_line_1);
+          if (shippingAddr.address_line_2) doc.text(shippingAddr.address_line_2);
+          doc.text(`${shippingAddr.city}, ${shippingAddr.state || ''} ${shippingAddr.postal_code}`);
+          doc.text(shippingAddr.country);
+          doc.text(`Phone: ${shippingAddr.phone}`);
+          doc.text(`Email: ${shippingAddr.email}`);
+        }
+      } else {
+        doc.text('Method: Pickup from Store');
+        if (delivery.pickup_date) doc.text(`Pickup Date: ${new Date(delivery.pickup_date).toLocaleDateString()}`);
+        if (delivery.pickup_time) doc.text(`Pickup Time: ${delivery.pickup_time}`);
+        doc.moveDown();
+        if (billingAddr) {
+          doc.fontSize(12).text('Customer Information:', { underline: true });
+          doc.fontSize(10).text(`${billingAddr.first_name} ${billingAddr.last_name}`);
+          doc.text(`Phone: ${billingAddr.phone}`);
+          doc.text(`Email: ${billingAddr.email}`);
+        }
+      }
+    }
+    doc.moveDown();
+
+    // Items
+    doc.fontSize(14).text('Order Items', { underline: true });
+    doc.moveDown(0.5);
+    const tableTop = doc.y;
+    doc.fontSize(10).font('Helvetica-Bold');
+    doc.text('Item', 50, tableTop);
+    doc.text('Qty', 300, tableTop);
+    doc.text('Price', 360, tableTop);
+    doc.text('Total', 450, tableTop);
+    doc.font('Helvetica');
+    let yPos = tableTop + 20;
+    items.forEach((item: any) => {
+      doc.text(item.product_title, 50, yPos, { width: 240 });
+      doc.text(item.quantity.toString(), 300, yPos);
+      doc.text(`R${(item.unit_price_cents / 100).toFixed(2)}`, 360, yPos);
+      doc.text(`R${(item.total_price_cents / 100).toFixed(2)}`, 450, yPos);
+      yPos += 25;
+    });
+
+    // Totals
+    yPos += 10;
+    doc.moveTo(50, yPos).lineTo(550, yPos).stroke();
+    yPos += 15;
+    doc.text('Subtotal:', 360, yPos);
+    doc.text(`R${(order.subtotal_cents / 100).toFixed(2)}`, 450, yPos);
+    yPos += 20;
+    if (order.shipping_cents > 0) {
+      doc.text('Shipping:', 360, yPos);
+      doc.text(`R${(order.shipping_cents / 100).toFixed(2)}`, 450, yPos);
+      yPos += 20;
+    }
+    doc.font('Helvetica-Bold');
+    doc.text('Total:', 360, yPos);
+    doc.text(`R${(order.total_cents / 100).toFixed(2)}`, 450, yPos);
+
+    doc.fontSize(8).font('Helvetica').text('Thank you for your business!', 50, doc.page.height - 50, { align: 'center' });
+    doc.end();
+  } catch (err: any) {
+    console.error('Invoice error:', err);
+    res.status(500).json({ error: 'Failed to generate invoice' });
   }
 });
 
@@ -748,14 +922,34 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
     // Create order with defaults
     const order = await Order.create({
       order_no: orderNo,
+      email: orderData.email || orderData.customer_email,
       status: orderData.status || 'pending',
-      payment_status: orderData.payment_status || 'unpaid',
+      payment_status: orderData.payment_status || 'pending',
+      subtotal_cents: orderData.subtotal_cents || 0,
+      shipping_cents: orderData.shipping_cents || 0,
+      discount_cents: orderData.discount_cents || 0,
+      tax_cents: orderData.tax_cents || 0,
       total_cents: orderData.total_cents || 0,
       shipping_address_id: shippingAddressId,
       billing_address_id: billingAddressId,
-      customer_email: orderData.customer_email,
-      customer_name: orderData.customer_name
+      gateway: orderData.gateway || 'ozow',
+      gateway_ref: orderData.gateway_ref
     });
+
+    // Create delivery information if provided
+    let delivery = null;
+    if (delivery_info) {
+      delivery = await OrderDelivery.create({
+        order_id: order._id,
+        delivery_method: delivery_info.delivery_method || delivery_info.method,
+        pickup_date: delivery_info.pickup_date,
+        pickup_time: delivery_info.pickup_time,
+        shipping_address_id: delivery_info.delivery_method === 'shipping' ? shippingAddressId : undefined,
+        tracking_number: delivery_info.tracking_number,
+        delivery_status: delivery_info.delivery_status || 'pending',
+        notes: delivery_info.notes
+      });
+    }
 
     // Create order items
     if (items && items.length > 0) {
@@ -802,22 +996,18 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
 
       const inserted = await OrderItem.insertMany(resolvedItems);
 
-      // Compute subtotal and update order totals (assume no shipping/tax for now)
+      // Compute subtotal and update order totals if not already set
       const subtotalCents = inserted.reduce((sum: number, it: any) => sum + (it.total_price_cents || 0), 0);
-      await Order.findByIdAndUpdate(order._id, { subtotal_cents: subtotalCents, total_cents: subtotalCents });
+      if (!orderData.subtotal_cents && !orderData.total_cents) {
+        await Order.findByIdAndUpdate(order._id, { 
+          subtotal_cents: subtotalCents, 
+          total_cents: subtotalCents + (orderData.shipping_cents || 0)
+        });
+      }
     }
 
-    // Create delivery info
-    if (delivery_info) {
-      await OrderDelivery.create({
-        order_id: order._id,
-        method: delivery_info.method || 'standard',
-        ...delivery_info
-      });
-    }
-
-  // Return the response shape the frontend expects
-  res.status(201).json({ order: { id: order._id, orderNo } });
+    // Return the response shape the frontend expects
+    res.status(201).json({ order: { id: order._id, orderNo } });
   } catch (err: any) {
     console.error('Create order error:', err);
     res.status(500).json({ error: 'Failed to create order', details: err.message });
@@ -837,6 +1027,49 @@ app.put('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req: ex
   } catch (err: any) {
     console.error('Update order error:', err?.message || err);
     res.status(500).json({ error: 'Failed to update order' });
+  }
+});
+
+app.put('/api/admin/orders/:id/delivery', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const { id } = req.params;
+    const { deliveryStatus, trackingNumber, notes } = req.body;
+
+    // Find the order first
+    const order = await Order.findById(id);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Check if delivery document exists
+    let delivery = await OrderDelivery.findOne({ order_id: id });
+    
+    if (!delivery) {
+      // Create delivery document if it doesn't exist
+      delivery = await OrderDelivery.create({
+        order_id: id,
+        delivery_method: 'shipping', // Assume shipping since this is the shipping page
+        delivery_status: deliveryStatus || 'pending',
+        tracking_number: trackingNumber,
+        notes: notes
+      });
+    } else {
+      // Update existing delivery document
+      delivery = await OrderDelivery.findOneAndUpdate(
+        { order_id: id },
+        {
+          delivery_status: deliveryStatus,
+          tracking_number: trackingNumber,
+          notes: notes
+        },
+        { new: true }
+      );
+    }
+
+    res.json({ delivery });
+  } catch (err: any) {
+    console.error('Update delivery error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to update delivery status', details: err.message });
   }
 });
 
