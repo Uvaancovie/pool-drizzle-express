@@ -1,7 +1,8 @@
 import express from 'express';
 import crypto from 'crypto';
 import PayfastOrder from '../models/PayfastOrder';
-import Order from '../models/Order';
+import mongoose from 'mongoose';
+import Address from '../models/Address';
 
 const router = express.Router();
 
@@ -126,7 +127,8 @@ router.post('/pay/:orderId', async (req: express.Request, res: express.Response)
     let isPayfastOrder = true;
     
     if (!order) {
-      // Try the regular Order model
+      // Try the regular Order model - access the already-compiled model
+      const Order = mongoose.models.Order || mongoose.model('Order');
       order = await Order.findById(orderId);
       isPayfastOrder = false;
     }
@@ -158,7 +160,6 @@ router.post('/pay/:orderId', async (req: express.Request, res: express.Response)
       orderNumber = order.order_no;
       
       // Try to get customer info from address
-      const Address = require('../models/Address').default;
       let shippingAddress = null;
       if (order.shipping_address_id) {
         shippingAddress = await Address.findById(order.shipping_address_id);
