@@ -115,4 +115,62 @@ router.post('/', async (req: express.Request, res: express.Response) => {
   }
 });
 
+// Generate PayFast payment link for existing order (from order confirmation page)
+router.post('/pay/:orderId', async (req: express.Request, res: express.Response) => {
+  try {
+    const { orderId } = req.params;
+
+    // Find the order
+    const order = await PayfastOrder.findById(orderId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Only allow payment for pending orders
+    if (order.status !== 'pending') {
+      return res.status(400).json({ error: `Order is already ${order.status}. Cannot process payment.` });
+    }
+
+    const grandTotal = order.totals.grandTotal;
+
+    // Build PayFast redirect URL
+    const mode = process.env.PAYFAST_MODE === 'live' 
+      ? 'https://www.payfast.co.za/eng/process' 
+      : 'https://sandbox.payfast.co.za/eng/process';
+    
+    // Build PayFast data object (no passphrase)
+    const payfastData: Record<string, any> = {
+      merchant_id: process.env.PAYFAST_MERCHANT_ID,
+      merchant_key: process.env.PAYFAST_MERCHANT_KEY,
+      return_url: process.env.PAYFAST_RETURN_URL,
+      cancel_url: process.env.PAYFAST_CANCEL_URL,
+      notify_url: process.env.PAYFAST_NOTIFY_URL,
+      name_first: (order.customerName || order.shipping?.name || 'Customer').split(' ')[0],
+      email_address: order.customerEmail || 'customer@poolbeanbags.co.za',
+      m_payment_id: order.number,
+      amount: grandTotal.toFixed(2),
+      item_name: `Pool Beanbags Order ${order.number}`
+    };
+
+    // Generate signature without passphrase
+    const signature = generateSignature(payfastData);
+    payfastData.signature = signature;
+
+    // Build query string for redirect
+    const queryString = Object.keys(payfastData)
+      .map(key => `${key}=${encodeURIComponent(payfastData[key])}`)
+      .join('&');
+
+    const redirectUrl = `${mode}?${queryString}`;
+
+    console.log(`Generated payment link for order ${order.number}`);
+
+    res.json({ redirect: redirectUrl });
+  } catch (error: any) {
+    console.error('Payment link generation error:', error);
+    res.status(500).json({ error: 'Failed to generate payment link', details: error.message });
+  }
+});
+
 export default router;
