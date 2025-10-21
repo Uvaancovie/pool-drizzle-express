@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import PayfastOrder from '../models/PayfastOrder';
+import Order from '../models/Order';
 
 const router = express.Router();
 
@@ -120,19 +121,54 @@ router.post('/pay/:orderId', async (req: express.Request, res: express.Response)
   try {
     const { orderId } = req.params;
 
-    // Find the order
-    const order = await PayfastOrder.findById(orderId);
+    // Try to find order in PayfastOrder first, then fall back to Order model
+    let order: any = await PayfastOrder.findById(orderId);
+    let isPayfastOrder = true;
+    
+    if (!order) {
+      // Try the regular Order model
+      order = await Order.findById(orderId);
+      isPayfastOrder = false;
+    }
     
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
     // Only allow payment for pending orders
-    if (order.status !== 'pending') {
-      return res.status(400).json({ error: `Order is already ${order.status}. Cannot process payment.` });
+    const orderStatus = isPayfastOrder ? order.status : order.status;
+    if (orderStatus !== 'pending') {
+      return res.status(400).json({ error: `Order is already ${orderStatus}. Cannot process payment.` });
     }
 
-    const grandTotal = order.totals.grandTotal;
+    // Get order details based on model type
+    let grandTotal: number;
+    let orderNumber: string;
+    let customerName: string;
+    let customerEmail: string;
+
+    if (isPayfastOrder) {
+      grandTotal = order.totals.grandTotal;
+      orderNumber = order.number;
+      customerName = order.customerName || order.shipping?.name || 'Customer';
+      customerEmail = order.customerEmail || 'customer@poolbeanbags.co.za';
+    } else {
+      // Regular Order model
+      grandTotal = order.total_cents ? order.total_cents / 100 : (order.total || 0);
+      orderNumber = order.order_no;
+      
+      // Try to get customer info from address
+      const Address = require('../models/Address').default;
+      let shippingAddress = null;
+      if (order.shipping_address_id) {
+        shippingAddress = await Address.findById(order.shipping_address_id);
+      }
+      
+      customerName = shippingAddress 
+        ? `${shippingAddress.first_name} ${shippingAddress.last_name}`
+        : 'Customer';
+      customerEmail = shippingAddress?.email || order.email || 'customer@poolbeanbags.co.za';
+    }
 
     // Build PayFast redirect URL
     const mode = process.env.PAYFAST_MODE === 'live' 
@@ -146,11 +182,11 @@ router.post('/pay/:orderId', async (req: express.Request, res: express.Response)
       return_url: process.env.PAYFAST_RETURN_URL,
       cancel_url: process.env.PAYFAST_CANCEL_URL,
       notify_url: process.env.PAYFAST_NOTIFY_URL,
-      name_first: (order.customerName || order.shipping?.name || 'Customer').split(' ')[0],
-      email_address: order.customerEmail || 'customer@poolbeanbags.co.za',
-      m_payment_id: order.number,
+      name_first: customerName.split(' ')[0],
+      email_address: customerEmail,
+      m_payment_id: orderNumber,
       amount: grandTotal.toFixed(2),
-      item_name: `Pool Beanbags Order ${order.number}`
+      item_name: `Pool Beanbags Order ${orderNumber}`
     };
 
     // Generate signature without passphrase
@@ -164,7 +200,7 @@ router.post('/pay/:orderId', async (req: express.Request, res: express.Response)
 
     const redirectUrl = `${mode}?${queryString}`;
 
-    console.log(`Generated payment link for order ${order.number}`);
+    console.log(`Generated payment link for order ${orderNumber} (${isPayfastOrder ? 'PayfastOrder' : 'Order'})`);
 
     res.json({ redirect: redirectUrl });
   } catch (error: any) {
