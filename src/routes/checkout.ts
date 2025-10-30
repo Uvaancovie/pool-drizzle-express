@@ -116,6 +116,84 @@ router.post('/', async (req: express.Request, res: express.Response) => {
   }
 });
 
+// New endpoint: POST /api/checkout/create-order
+// This matches the UPSTREAM_CHECKOUT_URL used by the frontend proxy when set to
+// https://pool-drizzle-express.onrender.com/api/checkout/create-order
+router.post('/create-order', async (req: express.Request, res: express.Response) => {
+  try {
+    const { items, subtotal_cents, shipping_cents, total_cents, courier } = req.body || {}
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'INVALID_ITEMS' })
+    }
+
+    // Recompute totals server-side using cents to prevent manipulation
+    const recomputedSubtotal = items.reduce((sum: number, item: any) => {
+      const price = typeof item.price === 'number' ? item.price : (typeof item.priceAtPurchase === 'number' ? item.priceAtPurchase : 0)
+      const qty = typeof item.quantity === 'number' ? item.quantity : (typeof item.qty === 'number' ? item.qty : 1)
+      return sum + (price * qty)
+    }, 0)
+
+    const recomputedShipping = 20000 // R200 flat fee (cents)
+    const recomputedTotal = recomputedSubtotal + recomputedShipping
+
+    // Optional: validate client-sent totals if provided
+    if (typeof total_cents === 'number' && recomputedTotal !== total_cents) {
+      return res.status(400).json({ error: 'TOTAL_MISMATCH', recomputedTotal })
+    }
+
+    // Persist a PayfastOrder so ITN can find & update it when PayFast notifies
+    const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2,6).toUpperCase()}`
+
+    const payfastOrder = await PayfastOrder.create({
+      number: orderNumber,
+      items: items.map((it: any) => ({
+        productId: it.productId || it.id || null,
+        variant: it.variant || null,
+        qty: typeof it.quantity === 'number' ? it.quantity : (typeof it.qty === 'number' ? it.qty : 1),
+        priceAtPurchase: typeof it.price === 'number' ? it.price : (typeof it.priceAtPurchase === 'number' ? it.priceAtPurchase : 0)
+      })),
+      totals: {
+        subtotal: recomputedSubtotal / 100,
+        shipping: recomputedShipping / 100,
+        discount: 0,
+        vat: 0,
+        grandTotal: recomputedTotal / 100
+      },
+      status: 'pending',
+      shipping: {
+        name: (req.body?.shippingAddress?.name) || req.body?.contactName || 'Customer',
+        phone: req.body?.shippingAddress?.phone || '',
+        address1: req.body?.shippingAddress?.address1 || '',
+        address2: req.body?.shippingAddress?.address2 || '',
+        city: req.body?.shippingAddress?.city || '',
+        province: req.body?.shippingAddress?.province || '',
+        postalCode: req.body?.shippingAddress?.postalCode || ''
+      },
+      customerEmail: req.body?.contactEmail || '',
+      customerName: req.body?.contactName || ''
+    })
+
+    // Build PayFast payload (no passphrase assumed)
+    const payfastPayload: Record<string, any> = {
+      merchant_id: process.env.PAYFAST_MERCHANT_ID,
+      merchant_key: process.env.PAYFAST_MERCHANT_KEY,
+      return_url: process.env.PAYFAST_RETURN_URL,
+      cancel_url: process.env.PAYFAST_CANCEL_URL,
+      notify_url: process.env.PAYFAST_NOTIFY_URL,
+      m_payment_id: payfastOrder.number,
+      amount: ((recomputedTotal) / 100).toFixed(2),
+      item_name: `Pool Beanbags Order ${payfastOrder.number}`,
+      item_description: `Flat shipping R ${(recomputedShipping/100).toFixed(2)} via ${courier || 'Fastway'}`,
+    }
+
+    return res.json({ payfast: payfastPayload, orderNumber: payfastOrder.number })
+  } catch (err: any) {
+    console.error('create-order (router) error:', err)
+    return res.status(500).json({ error: 'SERVER_ERROR', detail: err?.message })
+  }
+})
+
 // Generate PayFast payment link for existing order (from order confirmation page)
 router.post('/pay/:orderId', async (req: express.Request, res: express.Response) => {
   try {
