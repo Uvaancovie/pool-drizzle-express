@@ -59,6 +59,13 @@ router.post('/itn', async (req: express.Request, res: express.Response) => {
       return res.status(404).send('Order not found');
     }
 
+    // Idempotency guard: if we've already recorded this pf_payment_id or the order is paid, skip
+    const existingPfId = order.payment?.pfData?.pf_payment_id || order.payment?.pfData?.pf_payment_id;
+    if (order.status === 'paid' || (pfData && existingPfId && pfData.pf_payment_id && existingPfId === pfData.pf_payment_id)) {
+      console.log('PayFast ITN: Duplicate/Already processed ITN for', m_payment_id, 'pf_payment_id:', pfData?.pf_payment_id);
+      return res.status(200).send('OK');
+    }
+
     // 3. Verify amount matches order total
     const expectedAmount = parseFloat(order.totals.grandTotal.toFixed(2));
     const receivedAmount = parseFloat(amount_gross);
@@ -93,6 +100,8 @@ router.post('/itn', async (req: express.Request, res: express.Response) => {
       
     } else {
       // Handle other statuses (PENDING, etc.)
+      order.payment = { provider: 'payfast', pfData, result: payment_status };
+      await order.save();
       console.log(`⚠ PayFast ITN: Order ${m_payment_id} status: ${payment_status}`);
     }
 

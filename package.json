@@ -10,6 +10,10 @@
     "start": "node dist/server.js",
     "migrate": "node src/migrate.js"
   },
+
+  "bin": {
+    "simulate-itn": "tools/simulate-itn.js"
+  },
   "dependencies": {
     "bcrypt": "^6.0.0",
     "body-parser": "^1.20.2",
