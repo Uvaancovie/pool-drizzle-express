@@ -9,7 +9,7 @@ const ENV = {
   CANCEL: process.env.OZOW_CANCEL_URL!,
   ERROR: process.env.OZOW_ERROR_URL!,
   NOTIFY: process.env.OZOW_NOTIFY_URL!,
-  IS_TEST: String(process.env.OZOW_IS_TEST || "false"),
+  IS_TEST: String(process.env.OZOW_IS_TEST || "true"), // Changed default to true for testing
 };
 
 export type OzowPost = {
@@ -72,11 +72,10 @@ export function computePostHash(p: OzowPost): string {
   const preLower = parts.join("") + ENV.PRIVATE_KEY;
   const pre = preLower.toLowerCase();
 
-  // DEBUG: Log hash preimage (masked) for debugging
-  if (process.env.OZOW_DEBUG === "true") {
-    const masked = pre.replace(ENV.PRIVATE_KEY.toLowerCase(), "***MASKED_PRIVATE_KEY***");
-    console.log("[OZOW HASH PREIMAGE]", masked);
-  }
+  // DEBUG: Always log for troubleshooting (mask private key)
+  const masked = pre.replace(ENV.PRIVATE_KEY.toLowerCase(), "***MASKED_PRIVATE_KEY***");
+  console.log("[OZOW HASH PREIMAGE]", masked);
+  console.log("[OZOW HASH PARTS]", parts);
 
   return crypto.createHash("sha512").update(pre).digest("hex");
 }
