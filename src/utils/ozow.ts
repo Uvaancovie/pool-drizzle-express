@@ -59,7 +59,7 @@ export function buildPost(input: {
   return p;
 }
 
-// Post hash: concat specific fields in order (11 fields only, NO Customer/Optionals), append PRIVATE_KEY, lowercase, sha512
+// Post hash: concat specific fields in order (12 fields including Customer), append PRIVATE_KEY, lowercase, sha512
 export function computePostHash(p: OzowPost): string {
   const safe = (v?: string) => (v ?? "").trim();
   
@@ -67,6 +67,7 @@ export function computePostHash(p: OzowPost): string {
     safe(p.SiteCode), safe(p.CountryCode), safe(p.CurrencyCode), safe(p.Amount),
     safe(p.TransactionReference), safe(p.BankReference),
     safe(p.CancelUrl), safe(p.ErrorUrl), safe(p.SuccessUrl), safe(p.NotifyUrl),
+    safe(p.Customer),  // ✅ Customer must be included in hash between NotifyUrl and IsTest
     safe(p.IsTest),
   ];
   const preLower = parts.join("") + ENV.PRIVATE_KEY;
