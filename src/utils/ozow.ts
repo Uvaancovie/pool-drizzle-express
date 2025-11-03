@@ -59,24 +59,38 @@ export function buildPost(input: {
   return p;
 }
 
-// Post hash: concat specific fields in order (12 fields including Customer), append PRIVATE_KEY, lowercase, sha512
+// Post hash: CORRECT ORDER per Ozow spec - Optional1-5 and Customer come BEFORE URLs
 export function computePostHash(p: OzowPost): string {
   const safe = (v?: string) => (v ?? "").trim();
   
   const parts = [
-    safe(p.SiteCode), safe(p.CountryCode), safe(p.CurrencyCode), safe(p.Amount),
-    safe(p.TransactionReference), safe(p.BankReference),
-    safe(p.CancelUrl), safe(p.ErrorUrl), safe(p.SuccessUrl), safe(p.NotifyUrl),
-    safe(p.Customer),  // ✅ Customer must be included in hash between NotifyUrl and IsTest
+    safe(p.SiteCode),
+    safe(p.CountryCode),
+    safe(p.CurrencyCode),
+    safe(p.Amount),
+    safe(p.TransactionReference),
+    safe(p.BankReference),
+    safe(p.Optional1),          // Include Optional1-5 (even if empty)
+    safe(p.Optional2),
+    safe(p.Optional3),
+    safe(p.Optional4),
+    safe(p.Optional5),
+    safe(p.Customer),           // Customer comes AFTER Optionals, BEFORE URLs
+    safe(p.CancelUrl),
+    safe(p.ErrorUrl),
+    safe(p.SuccessUrl),
+    safe(p.NotifyUrl),
     safe(p.IsTest),
   ];
   const preLower = parts.join("") + ENV.PRIVATE_KEY;
   const pre = preLower.toLowerCase();
 
   // DEBUG: Always log for troubleshooting (mask private key)
-  const masked = pre.replace(ENV.PRIVATE_KEY.toLowerCase(), "***MASKED_PRIVATE_KEY***");
-  console.log("[OZOW HASH PREIMAGE]", masked);
-  console.log("[OZOW HASH PARTS]", parts);
+  if (process.env.OZOW_DEBUG === "true") {
+    const masked = pre.replace(ENV.PRIVATE_KEY.toLowerCase(), "***MASKED_PRIVATE_KEY***");
+    console.log("[OZOW HASH PREIMAGE]", masked);
+    console.log("[OZOW HASH PARTS]", parts);
+  }
 
   return crypto.createHash("sha512").update(pre).digest("hex");
 }
