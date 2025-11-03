@@ -67,6 +67,23 @@ router.post("/api/ozow/create", async (req, res) => {
       optional: { Optional1: String(order._id) }
     });
 
+    // DEBUG: Log the exact fields being sent to Ozow (without full hash)
+    console.log("[OZOW POST FIELDS]", {
+      SiteCode: post.SiteCode,
+      CountryCode: post.CountryCode,
+      CurrencyCode: post.CurrencyCode,
+      Amount: post.Amount,
+      TransactionReference: post.TransactionReference,
+      BankReference: post.BankReference,
+      CancelUrl: post.CancelUrl,
+      ErrorUrl: post.ErrorUrl,
+      SuccessUrl: post.SuccessUrl,
+      NotifyUrl: post.NotifyUrl,
+      IsTest: post.IsTest,
+      Customer: post.Customer,
+      HashCheck: post.HashCheck?.slice(0, 12) + "...", // partial
+    });
+
     return res.json({ ozow: post });
   } catch (e: any) {
     console.error("ozow/create error:", e?.message || e);

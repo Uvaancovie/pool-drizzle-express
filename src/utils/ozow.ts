@@ -59,18 +59,26 @@ export function buildPost(input: {
   return p;
 }
 
-// Post hash: concat specific fields in order (INCLUDING Customer and Optionals), append PRIVATE_KEY, lowercase, sha512
+// Post hash: concat specific fields in order (11 fields only, NO Customer/Optionals), append PRIVATE_KEY, lowercase, sha512
 export function computePostHash(p: OzowPost): string {
-  const seq = [
-    p.SiteCode, p.CountryCode, p.CurrencyCode, p.Amount,
-    p.TransactionReference, p.BankReference,
-    p.CancelUrl ?? "", p.ErrorUrl ?? "", p.SuccessUrl ?? "", p.NotifyUrl ?? "",
-    p.Customer ?? "",
-    p.Optional1 ?? "", p.Optional2 ?? "", p.Optional3 ?? "", p.Optional4 ?? "", p.Optional5 ?? "",
-    p.IsTest
-  ].join("") + ENV.PRIVATE_KEY;
+  const safe = (v?: string) => (v ?? "").trim();
+  
+  const parts = [
+    safe(p.SiteCode), safe(p.CountryCode), safe(p.CurrencyCode), safe(p.Amount),
+    safe(p.TransactionReference), safe(p.BankReference),
+    safe(p.CancelUrl), safe(p.ErrorUrl), safe(p.SuccessUrl), safe(p.NotifyUrl),
+    safe(p.IsTest),
+  ];
+  const preLower = parts.join("") + ENV.PRIVATE_KEY;
+  const pre = preLower.toLowerCase();
 
-  return crypto.createHash("sha512").update(seq.toLowerCase()).digest("hex");
+  // DEBUG: Log hash preimage (masked) for debugging
+  if (process.env.OZOW_DEBUG === "true") {
+    const masked = pre.replace(ENV.PRIVATE_KEY.toLowerCase(), "***MASKED_PRIVATE_KEY***");
+    console.log("[OZOW HASH PREIMAGE]", masked);
+  }
+
+  return crypto.createHash("sha512").update(pre).digest("hex");
 }
 
 // Response hash validator: concat response vars (document order) + PRIVATE_KEY, lowercase, sha512, trim leading zeros
