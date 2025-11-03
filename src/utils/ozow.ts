@@ -59,12 +59,14 @@ export function buildPost(input: {
   return p;
 }
 
-// Post hash: concat specific fields in order, append PRIVATE_KEY, lowercase, sha512
+// Post hash: concat specific fields in order (INCLUDING Customer and Optionals), append PRIVATE_KEY, lowercase, sha512
 export function computePostHash(p: OzowPost): string {
   const seq = [
     p.SiteCode, p.CountryCode, p.CurrencyCode, p.Amount,
     p.TransactionReference, p.BankReference,
     p.CancelUrl ?? "", p.ErrorUrl ?? "", p.SuccessUrl ?? "", p.NotifyUrl ?? "",
+    p.Customer ?? "",
+    p.Optional1 ?? "", p.Optional2 ?? "", p.Optional3 ?? "", p.Optional4 ?? "", p.Optional5 ?? "",
     p.IsTest
   ].join("") + ENV.PRIVATE_KEY;
 
