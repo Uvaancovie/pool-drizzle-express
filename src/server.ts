@@ -23,8 +23,7 @@ import {
   Contact 
 } from './db/models';
 import shippingRoutes from './routes/shipping';
-import checkoutRoutes from './routes/checkout';
-import payfastRoutes from './routes/payfast-itn';
+import ozowRoutes from './routes/ozow';
 
 dotenv.config();
 
@@ -39,7 +38,7 @@ app.use(helmet());
 
 // Body parsers
 app.use(bodyParser.json());
-app.use(express.urlencoded({ extended: true })); // Required for PayFast ITN
+app.use(express.urlencoded({ extended: true })); // Required for Ozow form posts
 
 // Configure CORS
 app.use(cors({
@@ -124,12 +123,11 @@ app.get('/api/health', (req: express.Request, res: express.Response) => {
 });
 
 // =========================
-// PAYFAST ROUTES
+// PAYMENT ROUTES
 // =========================
 
 app.use('/api/shipping', shippingRoutes);
-app.use('/api/checkout', checkoutRoutes);
-app.use('/api/payfast', payfastRoutes);
+app.use(ozowRoutes); // Ozow routes (includes /api/ozow/create, /api/ozow/redirect, /api/ozow/notify)
 
 // =========================
 // AUTHENTICATION ROUTES
