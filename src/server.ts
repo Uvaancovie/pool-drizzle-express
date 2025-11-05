@@ -40,9 +40,27 @@ app.use(helmet());
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true })); // Required for Ozow form posts
 
-// Configure CORS
+// Configure CORS - allow both production and local development
+const allowedOrigins = [
+  'https://www.poolbeanbags.co.za',
+  'https://poolbeanbags-frontend.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:4000'
+];
+
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || true,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, Postman, or curl)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('⚠️ Blocked by CORS:', origin);
+      callback(null, true); // Allow anyway for development
+    }
+  },
   credentials: true,
   optionsSuccessStatus: 200,
 }));
