@@ -17,7 +17,7 @@ router.post("/api/ozow/create", async (req, res) => {
 
     // Validate shipping choice
     const isPickup = shipping?.type === "pickup";
-    const expectedShip = isPickup ? 0 : (items?.length ? 20000 : 0);
+    const expectedShip = isPickup ? 0 : (items?.length ? 25000 : 0); // R250 flat fee via Fastway
     if (expectedShip !== +shipping_cents) {
       console.error("Bad shipping:", { expectedShip, shipping_cents, isPickup });
       return res.status(400).json({ error: "BAD_SHIPPING" });
