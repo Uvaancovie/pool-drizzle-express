@@ -40,6 +40,9 @@ app.use(helmet());
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true })); // Required for Ozow form posts
 
+// Health check endpoint for keeping Render dyno warm
+app.get("/health", (_, res) => res.status(200).send("OK"));
+
 // Configure CORS - allow both production and local development
 const allowedOrigins = [
   'https://www.poolbeanbags.co.za',
