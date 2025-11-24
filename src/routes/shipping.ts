@@ -3,7 +3,7 @@ import express from 'express';
 const router = express.Router();
 
 // Shipping quote endpoint
-// Flat rate R250 nationwide via Fastway Couriers
+// Flat rate R1000 nationwide via Fastway Couriers for loungers
 router.post('/quote', (req: express.Request, res: express.Response) => {
   try {
     const { cartTotal, destination } = req.body;
@@ -12,8 +12,8 @@ router.post('/quote', (req: express.Request, res: express.Response) => {
       return res.status(400).json({ error: 'cartTotal and destination are required' });
     }
 
-    // Flat rate R250 nationwide via Fastway Couriers
-    const basePrice = 250;
+    // Flat rate R1000 nationwide via Fastway Couriers for loungers
+    const basePrice = 1000;
     const etaDays = '2–4';
     const code = 'FASTWAY';
     const name = 'Fastway Couriers - Nationwide Delivery';

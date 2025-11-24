@@ -19,6 +19,7 @@ export interface IProduct extends Document {
   slug: string;
   title: string;
   description?: string;
+  category?: string;
   status: string;
   base_price_cents: number;
   is_promotional: boolean;
@@ -138,6 +139,7 @@ const ProductSchema = new Schema<IProduct>({
   slug: { type: String, required: true, index: true },  // Add index for fast lookups
   title: { type: String, required: true },
   description: String,
+  category: { type: String, index: true },
   status: { type: String, required: true, default: 'draft', index: true },  // Index for filtering
   base_price_cents: { type: Number, required: true, default: 0 },
   is_promotional: { type: Boolean, required: true, default: false, index: true },  // Index for featured queries
