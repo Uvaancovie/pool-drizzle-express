@@ -1028,7 +1028,8 @@ app.post('/api/orders', async (req: express.Request, res: express.Response) => {
             product_title: productRecord?.title || item.product_title || item.title || 'Product',
             quantity: qty,
             unit_price_cents: unitPrice,
-            total_price_cents: totalPrice
+            total_price_cents: totalPrice,
+            fabric: item.fabric
           });
         }
       }

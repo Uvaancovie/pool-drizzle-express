@@ -95,6 +95,7 @@ export interface IOrderItem extends Document {
   total_price_cents: number;
   product_title: string;
   product_slug: string;
+  fabric?: string;
   created_at: Date;
 }
 
@@ -215,6 +216,7 @@ const OrderItemSchema = new Schema<IOrderItem>({
   total_price_cents: { type: Number, required: true },
   product_title: { type: String, required: true },
   product_slug: { type: String, required: true },
+  fabric: { type: String },
   created_at: { type: Date, default: Date.now }
 });
 

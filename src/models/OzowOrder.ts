@@ -6,7 +6,8 @@ const ItemSchema = new Schema({
   slug: String,
   price: Number,      // cents
   quantity: Number,
-  image: String
+  image: String,
+  fabric: String
 }, { _id: false });
 
 const AddressSchema = new Schema({
@@ -31,6 +32,7 @@ export interface IOzowOrder extends Document {
   items: any[];
   subtotal_cents: number;
   shipping_cents: number;
+  discount_cents?: number;
   total_cents: number;
   shipping: any;
   customer: any;

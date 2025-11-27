@@ -7,13 +7,23 @@ const router = Router();
 // Helper: recompute totals
 function computeTotals(items: any[]) {
   const subtotal = (items || []).reduce((t, i) => t + (i.price * i.quantity), 0);
-  return { subtotal };
+  const count = (items || []).reduce((c, i) => c + i.quantity, 0);
+  
+  // Discount logic
+  let percent = 0;
+  if (count >= 3) percent = 20;
+  else if (count === 2) percent = 10;
+  else if (count >= 1) percent = 5;
+  
+  const discount = Math.round(subtotal * (percent / 100));
+  
+  return { subtotal, discount };
 }
 
 // Create Ozow transaction
 router.post("/api/ozow/create", async (req, res) => {
   try {
-    const { items, subtotal_cents, shipping_cents, total_cents, customer, shipping } = req.body;
+    const { items, subtotal_cents, shipping_cents, discount_cents, total_cents, customer, shipping } = req.body;
 
     // Validate shipping choice
     const isPickup = shipping?.type === "pickup";
@@ -36,10 +46,12 @@ router.post("/api/ozow/create", async (req, res) => {
     }
 
     // Recompute totals server-side
-    const { subtotal } = computeTotals(items);
-    const expectedTotal = subtotal + expectedShip;
+    const { subtotal, discount } = computeTotals(items);
+    const expectedTotal = subtotal + expectedShip - discount;
+    
+    // Allow small rounding difference (1 cent) if needed, but exact match preferred
     if (subtotal !== +subtotal_cents || expectedTotal !== +total_cents) {
-      console.error("Total mismatch:", { subtotal, subtotal_cents, expectedTotal, total_cents });
+      console.error("Total mismatch:", { subtotal, subtotal_cents, discount, discount_cents, expectedTotal, total_cents });
       return res.status(400).json({ error: "TOTAL_MISMATCH" });
     }
 
@@ -52,6 +64,7 @@ router.post("/api/ozow/create", async (req, res) => {
       items,
       subtotal_cents: subtotal,
       shipping_cents: expectedShip,
+      discount_cents: discount,
       total_cents: expectedTotal,
       customer,
       shipping
