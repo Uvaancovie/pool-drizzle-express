@@ -9,14 +9,9 @@ function computeTotals(items: any[]) {
   const subtotal = (items || []).reduce((t, i) => t + (i.price * i.quantity), 0);
   const count = (items || []).reduce((c, i) => c + i.quantity, 0);
   
-  // Discount logic
-  let percent = 0;
-  if (count >= 3) percent = 20;
-  else if (count === 2) percent = 10;
-  else if (count >= 1) percent = 5;
-  
-  const discount = Math.round(subtotal * (percent / 100));
-  
+  // Discounts are disabled — always 0 to restore normal pricing
+  const discount = 0;
+
   return { subtotal, discount };
 }
 
