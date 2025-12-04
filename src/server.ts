@@ -25,6 +25,7 @@ import {
 import shippingRoutes from './routes/shipping';
 import ozowRoutes from './routes/ozow';
 import payfastRoutes from './routes/payfast';
+import { PayfastOrder } from './models/PayfastOrder';
 
 dotenv.config();
 
@@ -708,6 +709,7 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: expres
     if (status) query.status = status;
     if (payment_status) query.payment_status = payment_status;
 
+    // Fetch orders from main Order collection
     const orders = await Order.find(query).sort({ created_at: -1 });
     
     // Fetch related data for each order and normalize fields for frontend
@@ -757,12 +759,50 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: expres
           items,
           delivery,
           shipping_address: shippingAddress,
-          billing_address: billingAddress
+          billing_address: billingAddress,
+          provider: 'legacy'
         };
       })
     );
 
-    res.json({ orders: ordersWithDetails });
+    // Fetch PayFast orders
+    const payfastQuery: any = {};
+    if (status) payfastQuery.status = status;
+    
+    const payfastOrders = await PayfastOrder.find(payfastQuery).sort({ createdAt: -1 });
+    
+    const payfastOrdersNormalized = payfastOrders.map((order: any) => {
+      return {
+        id: order._id,
+        orderNo: order.m_payment_id,
+        status: order.status || 'pending',
+        paymentStatus: order.payment_status || order.status || 'pending',
+        total: (order.total_cents || 0) / 100,
+        createdAt: order.createdAt,
+        customer: order.customer ? {
+          name: `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim(),
+          email: order.customer.email_address,
+          phone: order.shipping?.phone || ''
+        } : null,
+        items: order.items || [],
+        delivery: null,
+        shipping_address: order.shipping ? {
+          address1: order.shipping.address1,
+          city: order.shipping.city,
+          province: order.shipping.province,
+          postal_code: order.shipping.postalCode,
+          phone: order.shipping.phone
+        } : null,
+        billing_address: null,
+        provider: 'payfast'
+      };
+    });
+
+    // Combine and sort by date
+    const allOrders = [...ordersWithDetails, ...payfastOrdersNormalized]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    res.json({ orders: allOrders });
   } catch (err: any) {
     console.error('Get orders error:', err?.message || err);
     res.status(500).json({ error: 'Failed to fetch orders' });
