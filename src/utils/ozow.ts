@@ -70,11 +70,10 @@ export function buildPost(input: {
 // Post hash: CORRECT ORDER per Ozow spec
 // HashCheck = SHA512(SiteCode + CountryCode + CurrencyCode + Amount + TransactionReference + BankReference 
 //                    + CancelUrl + ErrorUrl + SuccessUrl + NotifyUrl + IsTest + PrivateKey)
-// NOTE: Trying minimal hash without Optional and Customer fields
 export function computePostHash(p: OzowPost): string {
   const safe = (v?: string) => (v ?? "").trim();
   
-  // Build hash string - MINIMAL approach (only core fields)
+  // Build hash string - core fields only
   let hashString = "";
   hashString += safe(p.SiteCode);
   hashString += safe(p.CountryCode);
@@ -82,24 +81,31 @@ export function computePostHash(p: OzowPost): string {
   hashString += safe(p.Amount);
   hashString += safe(p.TransactionReference);
   hashString += safe(p.BankReference);
-  
-  // Skip Optional1-5 and Customer - they may not be part of hash
-  // hashString += safe(p.Optional1);
-  // hashString += safe(p.Customer);
-  
-  // URLs and IsTest
   hashString += safe(p.CancelUrl);
   hashString += safe(p.ErrorUrl);
   hashString += safe(p.SuccessUrl);
   hashString += safe(p.NotifyUrl);
   hashString += safe(p.IsTest);
   
-  // Use PRIVATE_KEY for hash generation
-  const hashKey = ENV.PRIVATE_KEY;
+  // Try BOTH keys and log which one we're using
+  // Ozow documentation is unclear - some say Private Key, some say API Key
+  const privateKey = ENV.PRIVATE_KEY;
+  const apiKey = ENV.API_KEY;
+  
+  // Use Private Key (as per most Ozow docs)
+  const hashKey = privateKey;
   const preHash = (hashString + hashKey).toLowerCase();
 
-  // DEBUG: Log for troubleshooting
-  console.log("[OZOW USING KEY] PRIVATE_KEY");
+  // DEBUG: Log both hashes so we can compare
+  const hashWithPrivate = crypto.createHash("sha512").update((hashString + privateKey).toLowerCase()).digest("hex");
+  const hashWithApi = crypto.createHash("sha512").update((hashString + apiKey).toLowerCase()).digest("hex");
+  
+  console.log("[OZOW DEBUG]", {
+    privateKeyLength: privateKey?.length || 0,
+    apiKeyLength: apiKey?.length || 0,
+    hashWithPrivateKey: hashWithPrivate.slice(0, 16) + "...",
+    hashWithApiKey: hashWithApi.slice(0, 16) + "...",
+  });
   console.log("[OZOW HASH FIELDS]", {
     siteCode: safe(p.SiteCode),
     amount: safe(p.Amount),
@@ -108,10 +114,10 @@ export function computePostHash(p: OzowPost): string {
     isTest: safe(p.IsTest),
   });
   console.log("[OZOW HASH PREIMAGE LENGTH]", preHash.length);
-  const masked = preHash.replace(hashKey.toLowerCase(), "***PRIVATE_KEY***");
+  const masked = preHash.replace(hashKey.toLowerCase(), "***KEY***");
   console.log("[OZOW HASH PREIMAGE]", masked);
 
-  return crypto.createHash("sha512").update(preHash).digest("hex");
+  return hashWithPrivate; // Using Private Key
 }
 
 // Response hash validator: concat response vars (document order) + API_KEY, lowercase, sha512, trim leading zeros
