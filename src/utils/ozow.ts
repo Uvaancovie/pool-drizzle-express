@@ -104,11 +104,13 @@ export function computePostHash(p: OzowPost): string {
   hashString += safe(p.NotifyUrl);
   hashString += safe(p.IsTest);
   
-  // Append private key and convert to lowercase
-  const hashKey = ENV.PRIVATE_KEY;
+  // Try API_KEY for hash generation (Ozow terminology is confusing)
+  // Some docs say "Private Key", others say "API Key" - trying API_KEY
+  const hashKey = ENV.API_KEY;
   const preHash = (hashString + hashKey).toLowerCase();
 
   // DEBUG: Log for troubleshooting
+  console.log("[OZOW USING KEY]", hashKey ? "API_KEY" : "MISSING");
   console.log("[OZOW HASH FIELDS]", {
     siteCode: safe(p.SiteCode),
     amount: safe(p.Amount),
@@ -118,13 +120,13 @@ export function computePostHash(p: OzowPost): string {
     isTest: safe(p.IsTest),
   });
   console.log("[OZOW HASH PREIMAGE LENGTH]", preHash.length);
-  const masked = preHash.replace(hashKey.toLowerCase(), "***PRIVATE_KEY***");
+  const masked = preHash.replace(hashKey.toLowerCase(), "***API_KEY***");
   console.log("[OZOW HASH PREIMAGE]", masked);
 
   return crypto.createHash("sha512").update(preHash).digest("hex");
 }
 
-// Response hash validator: concat response vars (document order) + PRIVATE_KEY, lowercase, sha512, trim leading zeros
+// Response hash validator: concat response vars (document order) + API_KEY, lowercase, sha512, trim leading zeros
 export function validateResponseHash(r: {
   SiteCode: string; TransactionId: string; TransactionReference: string; Amount: string;
   Status: string; Optional1?: string; Optional2?: string; Optional3?: string; Optional4?: string; Optional5?: string;
@@ -132,7 +134,7 @@ export function validateResponseHash(r: {
 }): boolean {
   const seq = (r.SiteCode||"")+(r.TransactionId||"")+(r.TransactionReference||"")+(r.Amount||"")+
               (r.Status||"")+(r.Optional1||"")+(r.Optional2||"")+(r.Optional3||"")+(r.Optional4||"")+(r.Optional5||"")+
-              (r.CurrencyCode||"")+(r.IsTest||"")+(r.StatusMessage||"") + process.env.OZOW_PRIVATE_KEY!;
+              (r.CurrencyCode||"")+(r.IsTest||"")+(r.StatusMessage||"") + process.env.OZOW_API_KEY!;
   const calc = crypto.createHash("sha512").update(seq.toLowerCase()).digest("hex").replace(/^0+/, "");
   const got  = (r.Hash||"").toLowerCase().replace(/^0+/, "");
   return calc === got;
