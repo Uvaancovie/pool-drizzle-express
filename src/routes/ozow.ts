@@ -18,6 +18,14 @@ function computeTotals(items: any[]) {
 // Create Ozow transaction
 router.post("/api/ozow/create", async (req, res) => {
   try {
+    // Validate Ozow environment variables
+    const requiredEnvVars = ['OZOW_SITE_CODE', 'OZOW_PRIVATE_KEY', 'OZOW_SUCCESS_URL', 'OZOW_CANCEL_URL', 'OZOW_ERROR_URL', 'OZOW_NOTIFY_URL'];
+    const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+    if (missingVars.length > 0) {
+      console.error("Missing Ozow environment variables:", missingVars);
+      return res.status(500).json({ error: "SERVER_CONFIG_ERROR", missing: missingVars });
+    }
+
     const { items, subtotal_cents, shipping_cents, discount_cents, total_cents, customer, shipping } = req.body;
 
     // Validate shipping choice
@@ -95,8 +103,9 @@ router.post("/api/ozow/create", async (req, res) => {
 
     return res.json({ ozow: post });
   } catch (e: any) {
-    console.error("ozow/create error:", e?.message || e);
-    res.status(500).json({ error: "SERVER_ERROR" });
+    console.error("ozow/create error:", e);
+    console.error("Stack trace:", e?.stack);
+    res.status(500).json({ error: "SERVER_ERROR", message: e?.message, details: e?.toString() });
   }
 });
 

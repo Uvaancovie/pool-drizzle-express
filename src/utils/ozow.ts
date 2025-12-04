@@ -36,6 +36,14 @@ export function buildPost(input: {
   customerEmail?: string;
   optional?: Partial<Pick<OzowPost,"Optional1"|"Optional2"|"Optional3"|"Optional4"|"Optional5">>;
 }): OzowPost {
+  // Validate required environment variables
+  if (!ENV.SITE) throw new Error("OZOW_SITE_CODE is not configured");
+  if (!ENV.PRIVATE_KEY) throw new Error("OZOW_PRIVATE_KEY is not configured");
+  if (!ENV.SUCCESS) throw new Error("OZOW_SUCCESS_URL is not configured");
+  if (!ENV.CANCEL) throw new Error("OZOW_CANCEL_URL is not configured");
+  if (!ENV.ERROR) throw new Error("OZOW_ERROR_URL is not configured");
+  if (!ENV.NOTIFY) throw new Error("OZOW_NOTIFY_URL is not configured");
+
   const p: OzowPost = {
     SiteCode: ENV.SITE,
     CountryCode: ENV.COUNTRY,
