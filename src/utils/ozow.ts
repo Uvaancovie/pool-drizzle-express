@@ -67,10 +67,14 @@ export function buildPost(input: {
   return p;
 }
 
-// Post hash: CORRECT ORDER per Ozow spec - Optional1-5 and Customer come BEFORE URLs
+// Post hash: CORRECT ORDER per Ozow spec
+// HashCheck = SHA512(SiteCode + CountryCode + CurrencyCode + Amount + TransactionReference + BankReference + CancelUrl + ErrorUrl + SuccessUrl + NotifyUrl + IsTest + PrivateKey)
+// NOTE: Customer and Optional1-5 are NOT included in the hash!
 export function computePostHash(p: OzowPost): string {
   const safe = (v?: string) => (v ?? "").trim();
   
+  // IMPORTANT: Only these fields are included in hash calculation (in this exact order)
+  // Customer and Optional1-5 are NOT included per Ozow documentation
   const parts = [
     safe(p.SiteCode),
     safe(p.CountryCode),
@@ -78,12 +82,6 @@ export function computePostHash(p: OzowPost): string {
     safe(p.Amount),
     safe(p.TransactionReference),
     safe(p.BankReference),
-    safe(p.Optional1),          // Include Optional1-5 (even if empty)
-    safe(p.Optional2),
-    safe(p.Optional3),
-    safe(p.Optional4),
-    safe(p.Optional5),
-    safe(p.Customer),           // Customer comes AFTER Optionals, BEFORE URLs
     safe(p.CancelUrl),
     safe(p.ErrorUrl),
     safe(p.SuccessUrl),
@@ -94,11 +92,10 @@ export function computePostHash(p: OzowPost): string {
   const pre = preLower.toLowerCase();
 
   // DEBUG: Always log for troubleshooting (mask private key)
-  if (process.env.OZOW_DEBUG === "true") {
-    const masked = pre.replace(ENV.PRIVATE_KEY.toLowerCase(), "***MASKED_PRIVATE_KEY***");
-    console.log("[OZOW HASH PREIMAGE]", masked);
-    console.log("[OZOW HASH PARTS]", parts);
-  }
+  console.log("[OZOW HASH PARTS]", parts);
+  console.log("[OZOW HASH STRING LENGTH]", pre.length);
+  const masked = pre.replace(ENV.PRIVATE_KEY.toLowerCase(), "***PRIVATE_KEY***");
+  console.log("[OZOW HASH PREIMAGE]", masked);
 
   return crypto.createHash("sha512").update(pre).digest("hex");
 }
