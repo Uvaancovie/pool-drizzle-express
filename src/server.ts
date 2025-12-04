@@ -812,32 +812,82 @@ app.get('/api/admin/orders', authenticateToken, requireAdmin, async (req: expres
 app.get('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
   try {
     const { id } = req.params;
-    const order = await Order.findById(id);
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    const items = await OrderItem.find({ order_id: id });
-    const delivery = await OrderDelivery.findOne({ order_id: id });
     
-    let shippingAddress = null;
-    let billingAddress = null;
+    // First try to find in legacy Order collection
+    let order = await Order.findById(id);
 
-    if (order.shipping_address_id) {
-      shippingAddress = await Address.findById(order.shipping_address_id);
-    }
-    if (order.billing_address_id) {
-      billingAddress = await Address.findById(order.billing_address_id);
+    if (order) {
+      const items = await OrderItem.find({ order_id: id });
+      const delivery = await OrderDelivery.findOne({ order_id: id });
+      
+      let shippingAddress = null;
+      let billingAddress = null;
+
+      if (order.shipping_address_id) {
+        shippingAddress = await Address.findById(order.shipping_address_id);
+      }
+      if (order.billing_address_id) {
+        billingAddress = await Address.findById(order.billing_address_id);
+      }
+
+      return res.json({
+        ...order.toObject(),
+        items,
+        delivery,
+        shipping_address: shippingAddress,
+        billing_address: billingAddress,
+        provider: 'legacy'
+      });
     }
 
-    res.json({
-      ...order.toObject(),
-      items,
-      delivery,
-      shipping_address: shippingAddress,
-      billing_address: billingAddress
-    });
+    // Try PayFast orders
+    const payfastOrder = await PayfastOrder.findById(id);
+    
+    if (payfastOrder) {
+      const orderData = payfastOrder.toObject() as any;
+      return res.json({
+        _id: orderData._id,
+        id: orderData._id,
+        order_no: orderData.m_payment_id,
+        orderNo: orderData.m_payment_id,
+        status: orderData.status || 'pending',
+        payment_status: orderData.payment_status || orderData.status || 'pending',
+        paymentStatus: orderData.payment_status || orderData.status || 'pending',
+        total: (orderData.total_cents || 0) / 100,
+        total_cents: orderData.total_cents,
+        subtotal_cents: orderData.subtotal_cents,
+        shipping_cents: orderData.shipping_cents,
+        discount_cents: orderData.discount_cents,
+        created_at: orderData.createdAt,
+        createdAt: orderData.createdAt,
+        customer: orderData.customer ? {
+          first_name: orderData.customer.first_name,
+          last_name: orderData.customer.last_name,
+          email: orderData.customer.email_address,
+          email_address: orderData.customer.email_address,
+          name: `${orderData.customer.first_name || ''} ${orderData.customer.last_name || ''}`.trim(),
+          phone: orderData.shipping?.phone || ''
+        } : null,
+        items: orderData.items || [],
+        delivery: null,
+        shipping_address: orderData.shipping ? {
+          type: orderData.shipping.type,
+          address1: orderData.shipping.address1,
+          address_1: orderData.shipping.address1,
+          city: orderData.shipping.city,
+          province: orderData.shipping.province,
+          postal_code: orderData.shipping.postalCode,
+          postalCode: orderData.shipping.postalCode,
+          phone: orderData.shipping.phone
+        } : null,
+        billing_address: null,
+        provider: 'payfast',
+        gateway_txn_id: orderData.gateway_txn_id,
+        gateway_status: orderData.gateway_status
+      });
+    }
+
+    return res.status(404).json({ error: 'Order not found' });
   } catch (err: any) {
     console.error('Get order error:', err?.message || err);
     res.status(500).json({ error: 'Failed to fetch order' });
