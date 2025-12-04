@@ -58,13 +58,9 @@ export function buildPost(input: {
     ErrorUrl: ENV.ERROR,
     SuccessUrl: ENV.SUCCESS,
     NotifyUrl: ENV.NOTIFY,
-    Customer: input.customerEmail,
-    // Only include Optional fields if they have values
-    ...(input.optional?.Optional1 && { Optional1: input.optional.Optional1 }),
-    ...(input.optional?.Optional2 && { Optional2: input.optional.Optional2 }),
-    ...(input.optional?.Optional3 && { Optional3: input.optional.Optional3 }),
-    ...(input.optional?.Optional4 && { Optional4: input.optional.Optional4 }),
-    ...(input.optional?.Optional5 && { Optional5: input.optional.Optional5 }),
+    // Don't send Customer field - it complicates hash calculation
+    // Customer: input.customerEmail,
+    // Don't send Optional fields either
     IsTest: ENV.IS_TEST,
   };
   p.HashCheck = computePostHash(p);
@@ -73,12 +69,12 @@ export function buildPost(input: {
 
 // Post hash: CORRECT ORDER per Ozow spec
 // HashCheck = SHA512(SiteCode + CountryCode + CurrencyCode + Amount + TransactionReference + BankReference 
-//                    + Optional1-5 + Customer + CancelUrl + ErrorUrl + SuccessUrl + NotifyUrl + IsTest + PrivateKey)
-// IMPORTANT: If Customer field is sent, it MUST be included in the hash!
+//                    + CancelUrl + ErrorUrl + SuccessUrl + NotifyUrl + IsTest + PrivateKey)
+// NOTE: Trying minimal hash without Optional and Customer fields
 export function computePostHash(p: OzowPost): string {
   const safe = (v?: string) => (v ?? "").trim();
   
-  // Build hash string in EXACT order per Ozow spec
+  // Build hash string - MINIMAL approach (only core fields)
   let hashString = "";
   hashString += safe(p.SiteCode);
   hashString += safe(p.CountryCode);
@@ -87,15 +83,9 @@ export function computePostHash(p: OzowPost): string {
   hashString += safe(p.TransactionReference);
   hashString += safe(p.BankReference);
   
-  // Optional fields (in order)
-  hashString += safe(p.Optional1);
-  hashString += safe(p.Optional2);
-  hashString += safe(p.Optional3);
-  hashString += safe(p.Optional4);
-  hashString += safe(p.Optional5);
-  
-  // Customer field - MUST be included if sending Customer in the POST!
-  hashString += safe(p.Customer);
+  // Skip Optional1-5 and Customer - they may not be part of hash
+  // hashString += safe(p.Optional1);
+  // hashString += safe(p.Customer);
   
   // URLs and IsTest
   hashString += safe(p.CancelUrl);
@@ -104,23 +94,21 @@ export function computePostHash(p: OzowPost): string {
   hashString += safe(p.NotifyUrl);
   hashString += safe(p.IsTest);
   
-  // Try API_KEY for hash generation (Ozow terminology is confusing)
-  // Some docs say "Private Key", others say "API Key" - trying API_KEY
-  const hashKey = ENV.API_KEY;
+  // Use PRIVATE_KEY for hash generation
+  const hashKey = ENV.PRIVATE_KEY;
   const preHash = (hashString + hashKey).toLowerCase();
 
   // DEBUG: Log for troubleshooting
-  console.log("[OZOW USING KEY]", hashKey ? "API_KEY" : "MISSING");
+  console.log("[OZOW USING KEY] PRIVATE_KEY");
   console.log("[OZOW HASH FIELDS]", {
     siteCode: safe(p.SiteCode),
     amount: safe(p.Amount),
     transRef: safe(p.TransactionReference),
     bankRef: safe(p.BankReference),
-    customer: safe(p.Customer),
     isTest: safe(p.IsTest),
   });
   console.log("[OZOW HASH PREIMAGE LENGTH]", preHash.length);
-  const masked = preHash.replace(hashKey.toLowerCase(), "***API_KEY***");
+  const masked = preHash.replace(hashKey.toLowerCase(), "***PRIVATE_KEY***");
   console.log("[OZOW HASH PREIMAGE]", masked);
 
   return crypto.createHash("sha512").update(preHash).digest("hex");
