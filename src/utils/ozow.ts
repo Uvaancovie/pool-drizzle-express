@@ -121,7 +121,7 @@ export function computePostHash(p: OzowPost): string {
   return hashWithPrivate;
 }
 
-// Response hash validator: concat response vars (document order) + API_KEY, lowercase, sha512, trim leading zeros
+// Response hash validator: concat response vars (document order) + PrivateKey, lowercase, sha512, trim leading zeros
 export function validateResponseHash(r: {
   SiteCode: string; TransactionId: string; TransactionReference: string; Amount: string;
   Status: string; Optional1?: string; Optional2?: string; Optional3?: string; Optional4?: string; Optional5?: string;
@@ -129,8 +129,24 @@ export function validateResponseHash(r: {
 }): boolean {
   const seq = (r.SiteCode||"")+(r.TransactionId||"")+(r.TransactionReference||"")+(r.Amount||"")+
               (r.Status||"")+(r.Optional1||"")+(r.Optional2||"")+(r.Optional3||"")+(r.Optional4||"")+(r.Optional5||"")+
-              (r.CurrencyCode||"")+(r.IsTest||"")+(r.StatusMessage||"") + process.env.OZOW_API_KEY!;
-  const calc = crypto.createHash("sha512").update(seq.toLowerCase()).digest("hex").replace(/^0+/, "");
-  const got  = (r.Hash||"").toLowerCase().replace(/^0+/, "");
-  return calc === got;
+              (r.CurrencyCode||"")+(r.IsTest||"")+(r.StatusMessage||"");
+  
+  // Try both keys for validation
+  const privateKey = process.env.OZOW_PRIVATE_KEY!;
+  const apiKey = process.env.OZOW_API_KEY!;
+  
+  const calcWithPrivate = crypto.createHash("sha512").update((seq + privateKey).toLowerCase()).digest("hex").replace(/^0+/, "");
+  const calcWithApi = crypto.createHash("sha512").update((seq + apiKey).toLowerCase()).digest("hex").replace(/^0+/, "");
+  const got = (r.Hash||"").toLowerCase().replace(/^0+/, "");
+  
+  console.log("[OZOW NOTIFY HASH DEBUG]", {
+    receivedHash: got.slice(0, 16) + "...",
+    calcWithPrivateKey: calcWithPrivate.slice(0, 16) + "...",
+    calcWithApiKey: calcWithApi.slice(0, 16) + "...",
+    matchesPrivate: calcWithPrivate === got,
+    matchesApi: calcWithApi === got,
+  });
+  
+  // Accept either key match
+  return calcWithPrivate === got || calcWithApi === got;
 }

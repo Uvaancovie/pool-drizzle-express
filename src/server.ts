@@ -24,6 +24,7 @@ import {
 } from './db/models';
 import shippingRoutes from './routes/shipping';
 import ozowRoutes from './routes/ozow';
+import payfastRoutes from './routes/payfast';
 
 dotenv.config();
 
@@ -149,6 +150,7 @@ app.get('/api/health', (req: express.Request, res: express.Response) => {
 
 app.use('/api/shipping', shippingRoutes);
 app.use(ozowRoutes); // Ozow routes (includes /api/ozow/create, /api/ozow/redirect, /api/ozow/notify)
+app.use('/api/payfast', payfastRoutes); // PayFast routes
 
 // =========================
 // AUTHENTICATION ROUTES
