@@ -41,7 +41,7 @@ export function buildPost(input: {
 }): OzowPost {
   // Validate required environment variables
   if (!ENV.SITE) throw new Error("OZOW_SITE_CODE is not configured");
-  if (!ENV.API_KEY) throw new Error("OZOW_API_KEY is not configured (used for hash generation)");
+  if (!ENV.PRIVATE_KEY) throw new Error("OZOW_PRIVATE_KEY is not configured (used for hash generation)");
   if (!ENV.SUCCESS) throw new Error("OZOW_SUCCESS_URL is not configured");
   if (!ENV.CANCEL) throw new Error("OZOW_CANCEL_URL is not configured");
   if (!ENV.ERROR) throw new Error("OZOW_ERROR_URL is not configured");
@@ -71,43 +71,59 @@ export function buildPost(input: {
 }
 
 // Post hash: CORRECT ORDER per Ozow spec
-// HashCheck = SHA512(SiteCode + CountryCode + CurrencyCode + Amount + TransactionReference + BankReference + CancelUrl + ErrorUrl + SuccessUrl + NotifyUrl + IsTest + ApiKey)
-// NOTE: Customer and Optional1-5 are NOT included in the hash!
+// HashCheck = SHA512(SiteCode + CountryCode + CurrencyCode + Amount + TransactionReference + BankReference 
+//                    + Optional1-5 + Customer + CancelUrl + ErrorUrl + SuccessUrl + NotifyUrl + IsTest + PrivateKey)
+// IMPORTANT: If Customer field is sent, it MUST be included in the hash!
 export function computePostHash(p: OzowPost): string {
   const safe = (v?: string) => (v ?? "").trim();
   
-  // IMPORTANT: Only these fields are included in hash calculation (in this exact order)
-  // Customer and Optional1-5 are NOT included per Ozow documentation
-  const parts = [
-    safe(p.SiteCode),
-    safe(p.CountryCode),
-    safe(p.CurrencyCode),
-    safe(p.Amount),
-    safe(p.TransactionReference),
-    safe(p.BankReference),
-    safe(p.CancelUrl),
-    safe(p.ErrorUrl),
-    safe(p.SuccessUrl),
-    safe(p.NotifyUrl),
-    safe(p.IsTest),
-  ];
+  // Build hash string in EXACT order per Ozow spec
+  let hashString = "";
+  hashString += safe(p.SiteCode);
+  hashString += safe(p.CountryCode);
+  hashString += safe(p.CurrencyCode);
+  hashString += safe(p.Amount);
+  hashString += safe(p.TransactionReference);
+  hashString += safe(p.BankReference);
   
-  // Use API_KEY for hash generation (Ozow calls this "Private Key" in their docs)
-  const hashKey = ENV.API_KEY;
-  const preLower = parts.join("") + hashKey;
-  const pre = preLower.toLowerCase();
+  // Optional fields (in order)
+  hashString += safe(p.Optional1);
+  hashString += safe(p.Optional2);
+  hashString += safe(p.Optional3);
+  hashString += safe(p.Optional4);
+  hashString += safe(p.Optional5);
+  
+  // Customer field - MUST be included if sending Customer in the POST!
+  hashString += safe(p.Customer);
+  
+  // URLs and IsTest
+  hashString += safe(p.CancelUrl);
+  hashString += safe(p.ErrorUrl);
+  hashString += safe(p.SuccessUrl);
+  hashString += safe(p.NotifyUrl);
+  hashString += safe(p.IsTest);
+  
+  // Append private key and convert to lowercase
+  const hashKey = ENV.PRIVATE_KEY;
+  const preHash = (hashString + hashKey).toLowerCase();
 
-  // DEBUG: Always log for troubleshooting (mask key)
-  console.log("[OZOW HASH PARTS]", parts);
-  console.log("[OZOW HASH STRING LENGTH]", pre.length);
-  console.log("[OZOW USING KEY]", hashKey ? `${hashKey.slice(0,6)}...${hashKey.slice(-4)}` : "MISSING");
-  const masked = pre.replace(hashKey.toLowerCase(), "***API_KEY***");
+  // DEBUG: Log for troubleshooting
+  console.log("[OZOW HASH FIELDS]", {
+    siteCode: safe(p.SiteCode),
+    amount: safe(p.Amount),
+    transRef: safe(p.TransactionReference),
+    bankRef: safe(p.BankReference),
+    customer: safe(p.Customer),
+    isTest: safe(p.IsTest),
+  });
+  console.log("[OZOW HASH PREIMAGE LENGTH]", preHash.length);
+  const masked = preHash.replace(hashKey.toLowerCase(), "***PRIVATE_KEY***");
   console.log("[OZOW HASH PREIMAGE]", masked);
 
-  return crypto.createHash("sha512").update(pre).digest("hex");
+  return crypto.createHash("sha512").update(preHash).digest("hex");
 }
 
-// Response hash validator: concat response vars (document order) + API_KEY, lowercase, sha512, trim leading zeros
+// Response hash validator: concat response vars (document order) + PRIVATE_KEY, lowercase, sha512, trim leading zeros
 export function validateResponseHash(r: {
   SiteCode: string; TransactionId: string; TransactionReference: string; Amount: string;
   Status: string; Optional1?: string; Optional2?: string; Optional3?: string; Optional4?: string; Optional5?: string;
@@ -115,7 +131,7 @@ export function validateResponseHash(r: {
 }): boolean {
   const seq = (r.SiteCode||"")+(r.TransactionId||"")+(r.TransactionReference||"")+(r.Amount||"")+
               (r.Status||"")+(r.Optional1||"")+(r.Optional2||"")+(r.Optional3||"")+(r.Optional4||"")+(r.Optional5||"")+
-              (r.CurrencyCode||"")+(r.IsTest||"")+(r.StatusMessage||"") + process.env.OZOW_API_KEY!;
+              (r.CurrencyCode||"")+(r.IsTest||"")+(r.StatusMessage||"") + process.env.OZOW_PRIVATE_KEY!;
   const calc = crypto.createHash("sha512").update(seq.toLowerCase()).digest("hex").replace(/^0+/, "");
   const got  = (r.Hash||"").toLowerCase().replace(/^0+/, "");
   return calc === got;
