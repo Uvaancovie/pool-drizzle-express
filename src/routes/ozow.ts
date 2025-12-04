@@ -18,8 +18,8 @@ function computeTotals(items: any[]) {
 // Create Ozow transaction
 router.post("/api/ozow/create", async (req, res) => {
   try {
-    // Validate Ozow environment variables
-    const requiredEnvVars = ['OZOW_SITE_CODE', 'OZOW_PRIVATE_KEY', 'OZOW_SUCCESS_URL', 'OZOW_CANCEL_URL', 'OZOW_ERROR_URL', 'OZOW_NOTIFY_URL'];
+    // Validate Ozow environment variables (API_KEY is used for hash generation)
+    const requiredEnvVars = ['OZOW_SITE_CODE', 'OZOW_API_KEY', 'OZOW_SUCCESS_URL', 'OZOW_CANCEL_URL', 'OZOW_ERROR_URL', 'OZOW_NOTIFY_URL'];
     const missingVars = requiredEnvVars.filter(v => !process.env[v]);
     if (missingVars.length > 0) {
       console.error("Missing Ozow environment variables:", missingVars);
