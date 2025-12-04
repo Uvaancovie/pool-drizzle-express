@@ -1175,6 +1175,33 @@ app.delete('/api/admin/contacts/:id', authenticateToken, requireAdmin, async (re
 });
 
 // =========================
+// DELETE ORDER
+// =========================
+
+app.delete('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const { id } = req.params;
+    const order = await Order.findById(id);
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Delete associated items and delivery
+    await OrderItem.deleteMany({ order_id: id });
+    await OrderDelivery.deleteMany({ order_id: id });
+
+    // Delete the order
+    await Order.findByIdAndDelete(id);
+
+    res.json({ message: 'Order deleted successfully' });
+  } catch (err: any) {
+    console.error('Delete order error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to delete order' });
+  }
+});
+
+// =========================
 // PDF INVOICE GENERATION
 // =========================
 
