@@ -59,11 +59,12 @@ export function buildPost(input: {
     SuccessUrl: ENV.SUCCESS,
     NotifyUrl: ENV.NOTIFY,
     Customer: input.customerEmail,
-    Optional1: input.optional?.Optional1,
-    Optional2: input.optional?.Optional2,
-    Optional3: input.optional?.Optional3,
-    Optional4: input.optional?.Optional4,
-    Optional5: input.optional?.Optional5,
+    // Only include Optional fields if they have values
+    ...(input.optional?.Optional1 && { Optional1: input.optional.Optional1 }),
+    ...(input.optional?.Optional2 && { Optional2: input.optional.Optional2 }),
+    ...(input.optional?.Optional3 && { Optional3: input.optional.Optional3 }),
+    ...(input.optional?.Optional4 && { Optional4: input.optional.Optional4 }),
+    ...(input.optional?.Optional5 && { Optional5: input.optional.Optional5 }),
     IsTest: ENV.IS_TEST,
   };
   p.HashCheck = computePostHash(p);

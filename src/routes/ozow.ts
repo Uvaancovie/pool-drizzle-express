@@ -75,13 +75,13 @@ router.post("/api/ozow/create", async (req, res) => {
 
     console.log(`✓ Ozow order created: ${mRef}, total: R${(expectedTotal / 100).toFixed(2)}`);
 
-    // Build Ozow post
+    // Build Ozow post - Don't use Optional fields to keep hash simple
     const post = buildPost({
       amountRands: expectedTotal / 100,
       transactionRef: mRef,
       bankRef: `POOLBAGS-${order._id.toString().slice(-6)}`,
-      customerEmail: customer?.email_address,
-      optional: { Optional1: String(order._id) }
+      customerEmail: customer?.email_address
+      // Note: Not using Optional1 to avoid hash complexity
     });
 
     // DEBUG: Log the exact fields being sent to Ozow (without full hash)
