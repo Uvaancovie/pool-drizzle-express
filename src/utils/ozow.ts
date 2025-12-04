@@ -117,7 +117,8 @@ export function computePostHash(p: OzowPost): string {
   const masked = preHash.replace(hashKey.toLowerCase(), "***KEY***");
   console.log("[OZOW HASH PREIMAGE]", masked);
 
-  return hashWithPrivate; // Using Private Key
+  // TRY API_KEY instead of Private Key
+  return hashWithApi;
 }
 
 // Response hash validator: concat response vars (document order) + API_KEY, lowercase, sha512, trim leading zeros
