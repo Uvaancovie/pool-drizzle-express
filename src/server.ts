@@ -1273,20 +1273,27 @@ app.delete('/api/admin/contacts/:id', authenticateToken, requireAdmin, async (re
 app.delete('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
   try {
     const { id } = req.params;
+    
+    // Try legacy Order first
     const order = await Order.findById(id);
 
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+    if (order) {
+      // Delete associated items and delivery
+      await OrderItem.deleteMany({ order_id: id });
+      await OrderDelivery.deleteMany({ order_id: id });
+      await Order.findByIdAndDelete(id);
+      return res.json({ message: 'Order deleted successfully' });
     }
 
-    // Delete associated items and delivery
-    await OrderItem.deleteMany({ order_id: id });
-    await OrderDelivery.deleteMany({ order_id: id });
+    // Try PayFast order
+    const payfastOrder = await PayfastOrder.findById(id);
+    
+    if (payfastOrder) {
+      await PayfastOrder.findByIdAndDelete(id);
+      return res.json({ message: 'Order deleted successfully' });
+    }
 
-    // Delete the order
-    await Order.findByIdAndDelete(id);
-
-    res.json({ message: 'Order deleted successfully' });
+    return res.status(404).json({ error: 'Order not found' });
   } catch (err: any) {
     console.error('Delete order error:', err?.message || err);
     res.status(500).json({ error: 'Failed to delete order' });
@@ -1300,56 +1307,124 @@ app.delete('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req:
 app.get('/api/admin/orders/:id/invoice', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
   try {
     const { id } = req.params;
+    
+    // Try legacy Order first
     const order = await Order.findById(id);
 
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
+    if (order) {
+      const items = await OrderItem.find({ order_id: id });
+      const shippingAddress = order.shipping_address_id 
+        ? await Address.findById(order.shipping_address_id) 
+        : null;
 
-    const items = await OrderItem.find({ order_id: id });
-    const shippingAddress = order.shipping_address_id 
-      ? await Address.findById(order.shipping_address_id) 
-      : null;
+      const doc = new PDFDocument();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=invoice-${order.order_no}.pdf`);
+      
+      doc.pipe(res);
 
-    const doc = new PDFDocument();
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=invoice-${order.order_no}.pdf`);
-    
-    doc.pipe(res);
-
-    // Header
-    doc.fontSize(20).text('INVOICE', { align: 'center' });
-    doc.moveDown();
-    doc.fontSize(12).text(`Order #: ${order.order_no}`);
-    doc.text(`Date: ${order.created_at.toLocaleDateString()}`);
-    doc.text(`Status: ${order.status}`);
-    doc.moveDown();
-
-    // Shipping address
-    if (shippingAddress) {
-      doc.text('Ship To:');
-      doc.text(`${shippingAddress.first_name} ${shippingAddress.last_name}`);
-      doc.text(shippingAddress.address_line_1);
-      if (shippingAddress.address_line_2) doc.text(shippingAddress.address_line_2);
-      doc.text(`${shippingAddress.city}, ${shippingAddress.postal_code}`);
+      // Header
+      doc.fontSize(20).text('INVOICE', { align: 'center' });
       doc.moveDown();
+      doc.fontSize(12).text(`Order #: ${order.order_no}`);
+      doc.text(`Date: ${order.created_at.toLocaleDateString()}`);
+      doc.text(`Status: ${order.status}`);
+      doc.moveDown();
+
+      // Shipping address
+      if (shippingAddress) {
+        doc.text('Ship To:');
+        doc.text(`${shippingAddress.first_name} ${shippingAddress.last_name}`);
+        doc.text(shippingAddress.address_line_1);
+        if (shippingAddress.address_line_2) doc.text(shippingAddress.address_line_2);
+        doc.text(`${shippingAddress.city}, ${shippingAddress.postal_code}`);
+        doc.moveDown();
+      }
+
+      // Items
+      doc.text('Items:', { underline: true });
+      items.forEach((item: any) => {
+        doc.text(`${item.product_title} x${item.quantity} - R${(item.total_price_cents / 100).toFixed(2)}`);
+      });
+      doc.moveDown();
+
+      // Totals
+      doc.text(`Subtotal: R${(order.subtotal_cents / 100).toFixed(2)}`);
+      doc.text(`Shipping: R${(order.shipping_cents / 100).toFixed(2)}`);
+      doc.text(`Tax: R${(order.tax_cents / 100).toFixed(2)}`);
+      doc.fontSize(14);
+      doc.text(`Total: R${(order.total_cents / 100).toFixed(2)}`);
+
+      doc.end();
+      return;
     }
 
-    // Items
-    doc.text('Items:', { underline: true });
-    items.forEach((item: any) => {
-      doc.text(`${item.product_title} x${item.quantity} - R${(item.total_price_cents / 100).toFixed(2)}`);
-    });
-    doc.moveDown();
+    // Try PayFast order
+    const payfastOrder = await PayfastOrder.findById(id);
+    
+    if (payfastOrder) {
+      const orderData = payfastOrder.toObject() as any;
+      
+      const doc = new PDFDocument();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=invoice-${orderData.m_payment_id}.pdf`);
+      
+      doc.pipe(res);
 
-    // Totals
-    doc.text(`Subtotal: R${(order.subtotal_cents / 100).toFixed(2)}`);
-    doc.text(`Shipping: R${(order.shipping_cents / 100).toFixed(2)}`);
-    doc.text(`Tax: R${(order.tax_cents / 100).toFixed(2)}`);
-    doc.fontSize(14);
-    doc.text(`Total: R${(order.total_cents / 100).toFixed(2)}`);
+      // Header
+      doc.fontSize(20).text('INVOICE', { align: 'center' });
+      doc.fontSize(10).text('Pool Beanbags', { align: 'center' });
+      doc.moveDown();
+      doc.fontSize(12).text(`Order #: ${orderData.m_payment_id}`);
+      doc.text(`Date: ${new Date(orderData.createdAt).toLocaleDateString()}`);
+      doc.text(`Status: ${orderData.status}`);
+      doc.text(`Payment: ${orderData.payment_status || orderData.status}`);
+      doc.moveDown();
 
-    doc.end();
+      // Customer info
+      if (orderData.customer) {
+        doc.text('Customer:');
+        doc.text(`${orderData.customer.first_name || ''} ${orderData.customer.last_name || ''}`);
+        if (orderData.customer.email_address) doc.text(orderData.customer.email_address);
+        doc.moveDown();
+      }
+
+      // Shipping address
+      if (orderData.shipping && orderData.shipping.type === 'delivery') {
+        doc.text('Ship To:');
+        if (orderData.shipping.address1) doc.text(orderData.shipping.address1);
+        doc.text(`${orderData.shipping.city || ''}, ${orderData.shipping.province || ''} ${orderData.shipping.postalCode || ''}`);
+        if (orderData.shipping.phone) doc.text(`Phone: ${orderData.shipping.phone}`);
+        doc.moveDown();
+      } else if (orderData.shipping?.type === 'pickup') {
+        doc.text('Delivery: Pickup');
+        doc.moveDown();
+      }
+
+      // Items
+      doc.text('Items:', { underline: true });
+      (orderData.items || []).forEach((item: any) => {
+        const itemPrice = (item.price || 0) / 100;
+        const lineTotal = itemPrice * (item.quantity || 1);
+        doc.text(`${item.title || 'Product'} x${item.quantity || 1} - R${lineTotal.toFixed(2)}`);
+        if (item.fabric) doc.fontSize(10).text(`  Fabric: ${item.fabric}`).fontSize(12);
+      });
+      doc.moveDown();
+
+      // Totals
+      doc.text(`Subtotal: R${((orderData.subtotal_cents || 0) / 100).toFixed(2)}`);
+      doc.text(`Shipping: R${((orderData.shipping_cents || 0) / 100).toFixed(2)}`);
+      if (orderData.discount_cents) {
+        doc.text(`Discount: -R${((orderData.discount_cents || 0) / 100).toFixed(2)}`);
+      }
+      doc.fontSize(14);
+      doc.text(`Total: R${((orderData.total_cents || 0) / 100).toFixed(2)}`);
+
+      doc.end();
+      return;
+    }
+
+    return res.status(404).json({ error: 'Order not found' });
   } catch (err: any) {
     console.error('Invoice generation error:', err?.message || err);
     res.status(500).json({ error: 'Failed to generate invoice' });
