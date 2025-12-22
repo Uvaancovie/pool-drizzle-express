@@ -1,6 +1,7 @@
 import { Router } from "express";
 import OzowOrder from "../models/OzowOrder";
 import { buildPost, validateResponseHash } from "../utils/ozow";
+import { sendOzowOrderEmail } from "../utils/email";
 
 const router = Router();
 
@@ -122,12 +123,17 @@ router.post("/api/ozow/redirect", async (req, res) => {
 
     const order = await OzowOrder.findOne({ m_payment_id: r.TransactionReference });
     if (order) {
+      const previousStatus = order.status;
       order.gateway_txn_id = r.TransactionId;
       order.gateway_status = r.Status;
       if (r.Status === "Complete") order.status = "paid";
       if (["Cancelled", "Error", "Abandoned"].includes(r.Status)) order.status = "cancelled";
       await order.save();
       console.log(`✓ Order ${r.TransactionReference} updated: ${r.Status}`);
+
+      if (r.Status === "Complete" && previousStatus !== 'paid') {
+        sendOzowOrderEmail(order).catch(err => console.error("Failed to send email on redirect:", err));
+      }
     }
 
     if (r.Status === "Complete") return res.redirect(process.env.OZOW_SUCCESS_URL!);
@@ -152,12 +158,17 @@ router.post("/api/ozow/notify", async (req, res) => {
 
     const order = await OzowOrder.findOne({ m_payment_id: n.TransactionReference });
     if (order) {
+      const previousStatus = order.status;
       order.gateway_txn_id = n.TransactionId;
       order.gateway_status = n.Status;
       if (n.Status === "Complete") order.status = "paid";
       if (["Cancelled", "Error", "Abandoned"].includes(n.Status)) order.status = "cancelled";
       await order.save();
       console.log(`✓ Notify: Order ${n.TransactionReference} -> ${n.Status}`);
+
+      if (n.Status === "Complete" && previousStatus !== 'paid') {
+        sendOzowOrderEmail(order).catch(err => console.error("Failed to send email on notify:", err));
+      }
     } else {
       console.warn(`Order not found: ${n.TransactionReference}`);
     }

@@ -26,6 +26,7 @@ import shippingRoutes from './routes/shipping';
 import ozowRoutes from './routes/ozow';
 import payfastRoutes from './routes/payfast';
 import { PayfastOrder } from './models/PayfastOrder';
+import OzowOrder from './models/OzowOrder';
 
 dotenv.config();
 
@@ -887,6 +888,54 @@ app.get('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req: ex
       });
     }
 
+    // Try Ozow orders
+    const ozowOrder = await OzowOrder.findById(id);
+    
+    if (ozowOrder) {
+      const orderData = ozowOrder.toObject() as any;
+      return res.json({
+        _id: orderData._id,
+        id: orderData._id,
+        order_no: orderData.m_payment_id,
+        orderNo: orderData.m_payment_id,
+        status: orderData.status || 'pending',
+        payment_status: orderData.status === 'paid' ? 'paid' : 'pending',
+        paymentStatus: orderData.status === 'paid' ? 'paid' : 'pending',
+        total: (orderData.total_cents || 0) / 100,
+        total_cents: orderData.total_cents,
+        subtotal_cents: orderData.subtotal_cents,
+        shipping_cents: orderData.shipping_cents,
+        discount_cents: orderData.discount_cents,
+        created_at: orderData.createdAt,
+        createdAt: orderData.createdAt,
+        customer: orderData.customer ? {
+          first_name: orderData.customer.first_name,
+          last_name: orderData.customer.last_name,
+          email: orderData.customer.email_address,
+          email_address: orderData.customer.email_address,
+          name: `${orderData.customer.first_name || ''} ${orderData.customer.last_name || ''}`.trim(),
+          phone: orderData.shipping?.phone || ''
+        } : null,
+        items: orderData.items || [],
+        delivery: null,
+        shipping: orderData.shipping,
+        shipping_address: orderData.shipping ? {
+          type: orderData.shipping.type,
+          address1: orderData.shipping.address1,
+          address_1: orderData.shipping.address1,
+          city: orderData.shipping.city,
+          province: orderData.shipping.province,
+          postal_code: orderData.shipping.postalCode,
+          postalCode: orderData.shipping.postalCode,
+          phone: orderData.shipping.phone
+        } : null,
+        billing_address: null,
+        provider: 'ozow',
+        gateway_txn_id: orderData.gateway_txn_id,
+        gateway_status: orderData.gateway_status
+      });
+    }
+
     return res.status(404).json({ error: 'Order not found' });
   } catch (err: any) {
     console.error('Get order error:', err?.message || err);
@@ -897,13 +946,57 @@ app.get('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req: ex
 // Invoice generation endpoint
 app.get('/api/admin/orders/:id/invoice', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
   try {
-    const order: any = await Order.findById(req.params.id);
+    let order: any = await Order.findById(req.params.id);
+    if (!order) {
+        order = await PayfastOrder.findById(req.params.id);
+    }
+    if (!order) {
+        order = await OzowOrder.findById(req.params.id);
+    }
+    
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    const items = await OrderItem.find({ order_id: order._id });
-    const delivery = order.delivery;
-    const shippingAddr = order.shipping_address_id ? await Address.findById(order.shipping_address_id) : null;
-    const billingAddr = order.billing_address_id ? await Address.findById(order.billing_address_id) : null;
+    // Normalize Items
+    let items: any[] = [];
+    if (order.items && order.items.length > 0 && (order.items[0].title || order.items[0].productId)) {
+         items = order.items.map((item: any) => ({
+            product_title: item.title || 'Product',
+            quantity: item.quantity || 1,
+            unit_price_cents: item.price || 0,
+            total_price_cents: (item.price || 0) * (item.quantity || 1)
+        }));
+    } else {
+        items = await OrderItem.find({ order_id: order._id });
+    }
+
+    // Normalize Delivery & Address
+    let delivery = order.delivery;
+    let shippingAddr: any = order.shipping_address_id ? await Address.findById(order.shipping_address_id) : null;
+    let billingAddr: any = order.billing_address_id ? await Address.findById(order.billing_address_id) : null;
+
+    // Handle Ozow/PayFast style shipping
+    if (!delivery && order.shipping) {
+        delivery = {
+            delivery_method: order.shipping.type === 'pickup' ? 'pickup' : 'shipping',
+            delivery_status: order.status === 'delivered' ? 'delivered' : 'pending',
+            tracking_number: order.shipping.trackingNumber
+        };
+        
+        if (order.shipping.type !== 'pickup') {
+             shippingAddr = {
+                first_name: order.customer?.first_name || order.customer?.name?.split(' ')[0] || '',
+                last_name: order.customer?.last_name || order.customer?.name?.split(' ').slice(1).join(' ') || '',
+                address_line_1: order.shipping.address1,
+                address_line_2: order.shipping.address2,
+                city: order.shipping.city,
+                state: order.shipping.province,
+                postal_code: order.shipping.postalCode,
+                country: 'South Africa',
+                phone: order.shipping.phone,
+                email: order.customer?.email_address || order.customer?.email
+            };
+        }
+    }
 
     const doc = new PDFDocument({ margin: 50 });
     res.setHeader('Content-Type', 'application/pdf');
@@ -914,10 +1007,10 @@ app.get('/api/admin/orders/:id/invoice', authenticateToken, requireAdmin, async 
     doc.fontSize(20).text('POOL BEANBAGS', { align: 'center' });
     doc.fontSize(10).text('Invoice', { align: 'center' });
     doc.moveDown();
-    doc.fontSize(12).text(`Order #: ${order.order_no}`);
+    doc.fontSize(12).text(`Order #: ${order.order_no || order.m_payment_id}`);
     doc.text(`Date: ${new Date(order.created_at || order.createdAt).toLocaleDateString()}`);
-    doc.text(`Status: ${order.status.toUpperCase()}`);
-    doc.text(`Payment: ${order.payment_status.toUpperCase()}`);
+    doc.text(`Status: ${(order.status || 'pending').toUpperCase()}`);
+    doc.text(`Payment: ${(order.payment_status || order.status || 'pending').toUpperCase()}`);
     doc.moveDown();
 
     // Delivery Info
@@ -1167,6 +1260,37 @@ app.put('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req: ex
   }
 });
 
+app.put('/api/admin/orders/:id/status', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    // Try legacy Order
+    let order = await Order.findByIdAndUpdate(id, { status }, { new: true });
+
+    if (order) {
+        return res.json(order);
+    }
+
+    // Try PayFast Order
+    const payfastOrder = await PayfastOrder.findByIdAndUpdate(id, { status }, { new: true });
+    if (payfastOrder) {
+        return res.json(payfastOrder);
+    }
+
+    // Try Ozow Order
+    const ozowOrder = await OzowOrder.findByIdAndUpdate(id, { status }, { new: true });
+    if (ozowOrder) {
+        return res.json(ozowOrder);
+    }
+
+    return res.status(404).json({ error: 'Order not found' });
+  } catch (err: any) {
+    console.error('Update order status error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to update order status' });
+  }
+});
+
 app.put('/api/admin/orders/:id/delivery', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
   try {
     const { id } = req.params;
@@ -1290,6 +1414,14 @@ app.delete('/api/admin/orders/:id', authenticateToken, requireAdmin, async (req:
     
     if (payfastOrder) {
       await PayfastOrder.findByIdAndDelete(id);
+      return res.json({ message: 'Order deleted successfully' });
+    }
+
+    // Try Ozow order
+    const ozowOrder = await OzowOrder.findById(id);
+    
+    if (ozowOrder) {
+      await OzowOrder.findByIdAndDelete(id);
       return res.json({ message: 'Order deleted successfully' });
     }
 
