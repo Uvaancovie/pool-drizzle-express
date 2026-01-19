@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { buildPost, validateSignature } from "../utils/payfast";
 import { PayfastOrder, IPayfastOrder } from "../models/PayfastOrder";
+import { sendPayfastOrderEmail } from "../utils/email";
 
 const router = Router();
 
@@ -59,6 +60,19 @@ router.post("/create", async (req: Request, res: Response) => {
       totalRands: (total || 0) / 100,
       itemCount: items?.length || 0,
     });
+
+    // Send email immediately when order is created
+    await sendPayfastOrderEmail({
+      m_payment_id: paymentId,
+      customer: {
+        name: `${customer?.first_name || ''} ${customer?.last_name || ''}`.trim() || 'N/A',
+        email_address: customer?.email_address,
+        phone_number: customer?.phone_number,
+      },
+      total_cents: total || 0,
+      status: 'pending',
+      items: items || [],
+    }).catch(err => console.error("[PAYFAST] Failed to send order email:", err));
 
     res.json({ success: true, post });
   } catch (error: any) {
@@ -141,6 +155,21 @@ router.post("/itn", async (req: Request, res: Response) => {
       status: order.status,
       paymentStatus: payment_status,
     });
+
+    // Send email notification for successful payments
+    if (payment_status === "COMPLETE") {
+      await sendPayfastOrderEmail({
+        m_payment_id,
+        customer: {
+          name: `${name_first || ''} ${name_last || ''}`.trim() || 'N/A',
+          email_address: email_address || order.customer?.email_address,
+          phone_number: order.customer?.phone_number,
+        },
+        total_cents: order.total_cents,
+        status: order.status,
+        items: order.items,
+      });
+    }
 
     res.status(200).send("OK");
   } catch (error: any) {
